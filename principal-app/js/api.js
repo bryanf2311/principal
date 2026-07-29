@@ -9,7 +9,7 @@
 import {
   collection, collectionGroup, doc, addDoc, getDoc, getDocs, setDoc, updateDoc,
   query, where, serverTimestamp, writeBatch, limit as fsLimit,
-} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+} from 'firebase/firestore';
 import { db } from './firebase-config.js';
 import { todayYMD, toDate } from './ui.js';
 

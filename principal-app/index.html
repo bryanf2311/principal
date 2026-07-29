@@ -7,6 +7,22 @@
   <meta name="description" content="Principal — a personal learning dashboard for students and teachers.">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231a1a2e'/%3E%3Ctext x='32' y='44' font-size='34' text-anchor='middle' fill='%23e94560'%3EP%3C/text%3E%3C/svg%3E">
   <link rel="stylesheet" href="css/style.css">
+
+  <!-- The Firebase SDK version lives here and nowhere else: every module
+       imports the bare "firebase/…" specifiers mapped below, so upgrading
+       is a one-line change. -->
+  <script type="importmap">
+  {
+    "imports": {
+      "firebase/app": "https://www.gstatic.com/firebasejs/12.16.0/firebase-app.js",
+      "firebase/auth": "https://www.gstatic.com/firebasejs/12.16.0/firebase-auth.js",
+      "firebase/firestore": "https://www.gstatic.com/firebasejs/12.16.0/firebase-firestore.js"
+    }
+  }
+  </script>
+
+  <link rel="preconnect" href="https://www.gstatic.com" crossorigin>
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/12.16.0/firebase-app.js">
 </head>
 <body>
   <div class="shell">
@@ -38,5 +54,30 @@
   <div class="toast-host" id="toast-host" aria-live="polite"></div>
 
   <script type="module" src="js/app.js"></script>
+
+  <!-- If the Firebase SDK modules can't be fetched (offline, blocked network,
+       or a version that no longer exists on the CDN) the module graph never
+       runs and the page would sit blank. Say so instead. -->
+  <script>
+    setTimeout(function () {
+      if (window.__PRINCIPAL_BOOTED__) return;
+      var map = document.querySelector('script[type=importmap]');
+      var sdk = '';
+      try { sdk = JSON.parse(map.textContent).imports['firebase/app']; } catch (e) { sdk = '(unreadable import map)'; }
+      document.body.classList.add('auth-mode');
+      document.getElementById('view').innerHTML =
+        '<div class="auth-wrap"><div class="auth-card">'
+        + '<div class="auth-brand"><div class="mark">📡</div><h1>Principal</h1>'
+        + '<p>The app could not start.</p></div>'
+        + '<div class="note">The Firebase SDK did not load. Check your connection, then confirm this URL '
+        + 'is reachable in a browser tab:</div>'
+        + '<p class="mono tiny" style="word-break:break-all;margin-top:12px">' + sdk + '</p>'
+        + '<p class="auth-hint">If that URL 404s, edit the <code>importmap</code> in '
+        + '<code>index.html</code> to a Firebase version that exists, then reload. '
+        + 'Anything else appears in the browser console.</p>'
+        + '<button class="btn btn-block" style="margin-top:14px" onclick="location.reload()">Reload</button>'
+        + '</div></div>';
+    }, 8000);
+  </script>
 </body>
 </html>

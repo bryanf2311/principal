@@ -2,7 +2,7 @@
    app.js — hash router, Firebase auth state, sidebar navigation.
    ============================================================ */
 
-import { onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { auth, isConfigured } from './firebase-config.js';
 import { getUserProfile, touchLastActive } from './api.js';
 import { esc, toast, skeletonPage, fmtDate, todayYMD, dayNameOf } from './ui.js';
@@ -12,6 +12,10 @@ import * as studentPage from './pages/studentDashboard.js';
 import * as teacherPage from './pages/teacherDashboard.js';
 import * as adminPage from './pages/adminDashboard.js';
 import * as quizPage from './pages/quiz.js';
+
+/* Imports are hoisted, so reaching this line means the whole module graph —
+   including the Firebase SDK — loaded. The fallback in index.html watches it. */
+window.__PRINCIPAL_BOOTED__ = true;
 
 const view = document.getElementById('view');
 const navEl = document.getElementById('nav');

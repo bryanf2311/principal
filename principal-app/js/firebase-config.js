@@ -1,26 +1,30 @@
 /* ============================================================
    Firebase project configuration
    ------------------------------------------------------------
-   1. Create a Firebase project: https://console.firebase.google.com
-   2. Add a Web app, then copy its config values below.
-   3. Enable Authentication -> Sign-in method -> Email/Password
-      (and Google, if you want the "Sign in with Google" button).
-   4. Create a Cloud Firestore database.
-   5. Deploy the rules in ../firestore.rules
+   Wired to the "principal-990be" project. To point the app at a
+   different project, replace the values below with the config from
+   Firebase console -> Project settings -> Your apps -> Web app.
 
+   Checklist for whichever project this points at:
+   1. Authentication -> Sign-in method: enable Email/Password
+      (and Google, for the "Sign in with Google" button).
+   2. Authentication -> Settings -> Authorized domains: add the
+      Netlify domain the app is served from.
+   3. Create a Cloud Firestore database.
+   4. Deploy the rules in ../firestore.rules
+
+   The SDK version lives in the import map in ../index.html.
    Nothing else in the app needs editing — every course, lesson,
    user and quiz is loaded from Firestore at runtime.
    ============================================================ */
 
-export const FIREBASE_SDK = '10.12.2';
-
 export const firebaseConfig = {
-  apiKey: 'YOUR_FIREBASE_API_KEY',
-  authDomain: 'YOUR_PROJECT.firebaseapp.com',
-  projectId: 'YOUR_PROJECT_ID',
-  storageBucket: 'YOUR_PROJECT.appspot.com',
-  messagingSenderId: 'YOUR_SENDER_ID',
-  appId: 'YOUR_APP_ID',
+  apiKey: 'AIzaSyC65If2W4dD8xIiYEVBJoX-xZCCKNQpphY',
+  authDomain: 'principal-990be.firebaseapp.com',
+  projectId: 'principal-990be',
+  storageBucket: 'principal-990be.firebasestorage.app',
+  messagingSenderId: '241769166266',
+  appId: '1:241769166266:web:3b349abb509cace2cad983',
 };
 
 /* Optional: base URL of the deployed Cloud Functions API, used only by the
@@ -32,9 +36,9 @@ export const API_BASE_URL = '';
    "Add Teacher" form. Users should change it after first sign-in. */
 export const DEFAULT_NEW_ACCOUNT_PASSWORD = 'Principal123!';
 
-import { initializeApp, deleteApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
-import { getAuth } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
-import { getFirestore } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { initializeApp, deleteApp } from 'firebase/app';
+import { getAuth } from 'firebase/auth';
+import { getFirestore } from 'firebase/firestore';
 
 /** True once real values have replaced the YOUR_… placeholders above. */
 export const isConfigured = !JSON.stringify(firebaseConfig).includes('YOUR_');

@@ -9,7 +9,7 @@
 
 import {
   createUserWithEmailAndPassword, signInWithEmailAndPassword, signOut,
-} from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+} from 'firebase/auth';
 import { createSecondaryApp, DEFAULT_NEW_ACCOUNT_PASSWORD } from './firebase-config.js';
 import {
   listUsers, listCourses, listQuizzes, listSessions, listGapReports, listQuizAttempts,

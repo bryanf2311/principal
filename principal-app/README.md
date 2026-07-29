@@ -14,7 +14,7 @@ principal-app/
   firestore.indexes.json  optional indexes (the web app needs none)
   css/style.css
   js/
-    firebase-config.js    ← the only file you must edit
+    firebase-config.js    project config (already filled in)
     app.js                router, auth listener, sidebar
     api.js                every Firestore read/write + derived metrics
     ui.js                 rendering helpers (escaping, cards, badges, toasts)
@@ -27,38 +27,38 @@ principal-app/
   scripts/seed.mjs        optional: Admin-SDK seeder (creates Auth users)
 ```
 
-## 1. Set up Firebase
+## 1. Firebase project
 
-1. Create a project at [console.firebase.google.com](https://console.firebase.google.com).
-2. **Build → Authentication → Get started → Email/Password**: enable it.
-   Enable **Google** too if you want the "Sign in with Google" button to work.
-3. **Build → Firestore Database → Create database** (production mode is fine — the rules below lock it down).
-4. **Project settings → Your apps → Web app**: register one, copy the config object.
-5. Paste those values into `js/firebase-config.js`:
+The app is already wired to the **`principal-990be`** project — its config lives in
+`js/firebase-config.js`. Three things still need to be true in the Firebase console:
 
-```js
-export const firebaseConfig = {
-  apiKey: 'AIza…',
-  authDomain: 'your-project.firebaseapp.com',
-  projectId: 'your-project',
-  storageBucket: 'your-project.appspot.com',
-  messagingSenderId: '1234567890',
-  appId: '1:1234567890:web:abc123',
-};
-```
+1. **Build → Authentication → Sign-in method**: enable **Email/Password**
+   (and **Google**, if you want the "Sign in with Google" button to work).
+2. **Build → Firestore Database**: create the database if it does not exist yet.
+3. **Authentication → Settings → Authorized domains**: add the Netlify domain you deploy to,
+   otherwise sign-in is rejected on the live URL. (`localhost` is authorized by default.)
 
-Until you do this, the app shows a setup screen instead of the login page.
-
-6. Publish the security rules:
+Then publish the security rules:
 
 ```bash
 npm install -g firebase-tools
 firebase login
-firebase use --add            # pick your project
+firebase use principal-990be
 firebase deploy --only firestore:rules
 ```
 
 (Or paste `firestore.rules` into **Firestore → Rules** in the console.)
+
+To point the app at a different project, replace the values in `firebaseConfig` — nothing
+else in the code refers to the project.
+
+### Firebase SDK version
+
+Every module imports bare specifiers (`firebase/app`, `firebase/auth`, `firebase/firestore`)
+that resolve through the **import map in `index.html`**, so the SDK version is set in exactly
+one place. It is currently pinned to **12.16.0**; to upgrade, change the three URLs in that
+import map (and the `modulepreload` next to it) and reload. Import maps need a current
+browser — Chrome/Edge 89+, Safari 16.4+, Firefox 108+.
 
 ## 2. Create the first admin account
 

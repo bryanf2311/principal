@@ -5,7 +5,7 @@
    add course · add account · demo seeding
    ============================================================ */
 
-import { createUserWithEmailAndPassword } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { createSecondaryApp, DEFAULT_NEW_ACCOUNT_PASSWORD } from '../firebase-config.js';
 import {
   listUsers, listCourses, listLessons, listMilestones, listSessions, listGapReports,
