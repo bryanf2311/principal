@@ -1,0 +1,12 @@
+{
+  "name": "principal-seed",
+  "private": true,
+  "type": "module",
+  "description": "Admin-SDK seeder for the Principal learning dashboard.",
+  "scripts": {
+    "seed": "node seed.mjs"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.1.0"
+  }
+}

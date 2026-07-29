@@ -1,0 +1,126 @@
+rules_version = '2';
+
+/* ============================================================
+   Principal — Firestore security rules
+   ------------------------------------------------------------
+   student : reads course content, sessions, gap reports, quizzes;
+             writes only its own quiz attempts and self-assessments
+   teacher : reads everything above; writes its own courses,
+             lessons, materials, milestones, sessions, quizzes and
+             gap reports; rotates its own API key
+   admin   : full read/write
+
+   Deploy with:  firebase deploy --only firestore:rules
+   ============================================================ */
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function hasProfile() {
+      return signedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function role() {
+      return hasProfile()
+        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role
+        : '';
+    }
+
+    function isAdmin()   { return role() == 'admin'; }
+    function isTeacher() { return role() == 'teacher'; }
+    function isStudent() { return role() == 'student'; }
+
+    function ownsCourse(courseId) {
+      return isTeacher()
+        && get(/databases/$(database)/documents/courses/$(courseId)).data.teacherId == request.auth.uid;
+    }
+
+    /* ------------------------------------------------------------ users */
+    match /users/{uid} {
+      // Own profile always; teachers and admins may browse the roster.
+      allow get: if signedIn() && (request.auth.uid == uid || isAdmin() || isTeacher());
+      allow list: if isAdmin() || isTeacher();
+
+      allow create: if isAdmin() || (signedIn() && request.auth.uid == uid);
+
+      // Users may edit their own profile (including rotating their API key)
+      // but may not promote themselves or change their slot.
+      allow update: if isAdmin()
+        || (signedIn() && request.auth.uid == uid
+            && request.resource.data.role == resource.data.role
+            && request.resource.data.teacherSlot == resource.data.teacherSlot);
+
+      allow delete: if isAdmin();
+    }
+
+    /* ---------------------------------------------------------- courses */
+    match /courses/{courseId} {
+      allow read: if signedIn();
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() || (isTeacher() && resource.data.teacherId == request.auth.uid);
+
+      match /lessons/{lessonId} {
+        allow read: if signedIn();
+        allow write: if isAdmin() || ownsCourse(courseId);
+
+        match /materials/{materialId} {
+          allow read: if signedIn();
+          allow write: if isAdmin() || ownsCourse(courseId);
+        }
+      }
+
+      match /milestones/{milestoneId} {
+        allow read: if signedIn();
+        allow write: if isAdmin() || ownsCourse(courseId);
+      }
+    }
+
+    /* --------------------------------------------------------- sessions */
+    match /sessions/{sessionId} {
+      allow read: if signedIn();
+      allow create: if isAdmin() || ownsCourse(request.resource.data.courseId);
+      allow update: if isAdmin() || ownsCourse(resource.data.courseId);
+      allow delete: if isAdmin();
+    }
+
+    /* ------------------------------------------------------ gapReports */
+    match /gapReports/{reportId} {
+      allow read: if signedIn();
+      allow create: if isAdmin()
+        || (isTeacher() && request.resource.data.teacherId == request.auth.uid);
+      allow update, delete: if isAdmin();
+    }
+
+    /* --------------------------------------------------------- quizzes */
+    match /quizzes/{quizId} {
+      allow read: if signedIn();
+      allow create: if isAdmin() || ownsCourse(request.resource.data.courseId);
+      allow update, delete: if isAdmin() || ownsCourse(resource.data.courseId);
+    }
+
+    /* ---------------------------------------------------- quizAttempts */
+    match /quizAttempts/{attemptId} {
+      // Students may only read their own attempts, and their queries are
+      // filtered by userId so the list operation stays verifiable.
+      allow get, list: if isAdmin() || isTeacher()
+        || (isStudent() && resource.data.userId == request.auth.uid);
+      allow create: if isAdmin()
+        || (isStudent() && request.resource.data.userId == request.auth.uid);
+      allow update, delete: if isAdmin();
+    }
+
+    /* ----------------------------------------------- studentAssessments */
+    match /studentAssessments/{assessmentId} {
+      allow read: if signedIn();
+      allow create: if isAdmin()
+        || (isStudent() && request.resource.data.userId == request.auth.uid);
+      allow update, delete: if isAdmin();
+    }
+
+    /* Anything not matched above is denied by default. */
+  }
+}

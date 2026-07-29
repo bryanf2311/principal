@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Principal — Learning Dashboard</title>
+  <meta name="description" content="Principal — a personal learning dashboard for students and teachers.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%231a1a2e'/%3E%3Ctext x='32' y='44' font-size='34' text-anchor='middle' fill='%23e94560'%3EP%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar" id="sidebar" aria-label="Main navigation">
+      <div class="brand">
+        <span class="brand-mark">🎓</span>
+        <span class="brand-text">Principal</span>
+      </div>
+      <nav class="nav" id="nav"></nav>
+      <div class="sidebar-foot" id="sidebar-foot"></div>
+    </aside>
+
+    <div class="backdrop" id="backdrop" hidden></div>
+
+    <main class="main">
+      <header class="topbar">
+        <button class="hamburger" id="menu-btn" aria-label="Toggle navigation">☰</button>
+        <div class="topbar-title">
+          <h1 id="page-title">Principal</h1>
+          <p class="topbar-sub" id="page-sub"></p>
+        </div>
+        <div class="topbar-right" id="topbar-right"></div>
+      </header>
+
+      <div class="view" id="view"></div>
+    </main>
+  </div>
+
+  <div class="toast-host" id="toast-host" aria-live="polite"></div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
