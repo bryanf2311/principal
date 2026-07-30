@@ -44,6 +44,46 @@ export const SEED_COURSES = [
         materials: [
           { type: 'video', title: 'Multi-step equations walkthrough', url: 'https://www.khanacademy.org/math/algebra/x2f8bb11595b61c86:solve-equations-inequalities', durationMin: 12 },
           { type: 'reading', title: 'Inverse operations reference sheet', url: 'https://openstax.org/details/books/elementary-algebra-2e' },
+          {
+            type: 'slides',
+            title: 'Solving Multi-Step Equations',
+            slides: [
+              {
+                title: 'What is a multi-step equation?',
+                bullets: [
+                  'An equation that takes more than one operation to solve',
+                  'Example: 3x + 7 = 22',
+                  'Goal: get x completely alone on one side',
+                ],
+                notes: 'Ask Bryan to point out which parts of 3x + 7 = 22 are "attached" to x.',
+              },
+              {
+                title: 'Step 1 — Undo addition or subtraction first',
+                bullets: [
+                  'Move constant terms away from the variable term',
+                  '3x + 7 = 22  →  subtract 7 from both sides',
+                  '3x = 15',
+                ],
+              },
+              {
+                title: 'Step 2 — Undo multiplication or division last',
+                bullets: [
+                  '3x = 15  →  divide both sides by 3',
+                  'x = 5',
+                  'Always check: 3(5) + 7 = 22 ✓',
+                ],
+              },
+              {
+                title: 'Your turn',
+                bullets: [
+                  'Solve 4x − 5 = 11 the same way',
+                  'Undo subtraction first, then division',
+                  'Write out both steps before checking your answer',
+                ],
+                notes: 'Have Bryan solve this on paper before revealing the next slide (there isn’t one — this is the last one).',
+              },
+            ],
+          },
         ],
       },
       {
@@ -897,9 +937,10 @@ export function buildCourse(seed, { today = new Date() } = {}) {
     materials: (lesson.materials || []).map((m, mi) => ({
       type: m.type,
       title: m.title,
-      url: m.url,
+      url: m.url || '',
       durationMin: m.type === 'video' ? (m.durationMin || 10) : 0,
       order: mi + 1,
+      ...(m.type === 'slides' ? { slides: m.slides } : {}),
     })),
   }));
 

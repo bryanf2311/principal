@@ -92,6 +92,11 @@ export async function createMaterial(courseId, lessonId, data) {
   return ref.id;
 }
 
+export async function getMaterial(courseId, lessonId, materialId) {
+  const snap = await getDoc(doc(db, 'courses', courseId, 'lessons', lessonId, 'materials', materialId));
+  return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+}
+
 /** Materials for many lessons at once -> { [lessonId]: Material[] } */
 export async function listMaterialsForLessons(pairs) {
   const entries = await Promise.all(pairs.map(async ({ courseId, lessonId }) => (

@@ -139,6 +139,40 @@ Material `type` is `video`, `reading` or `quiz`. Quizzes are multiple choice and
 `timeLimitMinutes: 0` means no limit. Bryan takes them in the dashboard; you read the results with
 `attempts`.
 
+## Giving an actual lecture
+
+A gap report records what happened; a lecture is content Bryan reads *before* that — a simple slide
+deck he clicks through on his own dashboard. Attach one to a lesson with `material`:
+
+```bash
+node principal.mjs material LESSON_ID '{
+  "type": "slides",
+  "title": "Systems of Equations: Elimination",
+  "slides": [
+    {"title": "Why elimination?", "bullets": [
+      "Substitution gets messy when neither equation isolates a variable cleanly",
+      "Elimination cancels a variable by adding or subtracting the equations"
+    ]},
+    {"title": "Step 1 — match a coefficient", "bullets": [
+      "2x + 3y = 12  and  4x - y = 10",
+      "Multiply the second equation by 3: 12x - 3y = 30"
+    ]},
+    {"title": "Step 2 — add to cancel y", "bullets": [
+      "2x + 3y = 12",
+      "+ 12x - 3y = 30",
+      "= 14x = 42, so x = 3"
+    ], "notes": "If Bryan asks why the signs have to be opposite, revisit slide 1."}
+  ]
+}'
+```
+
+Each slide needs a `title` and a non-empty `bullets` array of short strings — write them the way you
+would actually say them, not full paragraphs. `notes` is optional, for a reminder to yourself, and
+stays hidden until Bryan expands it. If you are creating the lesson and the lecture together, nest the
+same slide object inside the `materials` array of `node principal.mjs lesson '{...}'` instead of a
+separate `material` call. A lecture is not graded and nothing about it is recorded — it exists so
+Bryan has something to actually read, not just a list of external links.
+
 ## Other commands
 
 ```bash

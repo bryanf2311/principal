@@ -606,6 +606,26 @@ fieldset.sub > legend { font-size: 12px; font-weight: 700; text-transform: upper
 .review-q { border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 14px; }
 .review-q + .review-q { margin-top: 10px; }
 
+/* ---------- Lecture / slide viewer ---------- */
+
+.slide-dots { display: flex; gap: 6px; margin: 14px 0 20px; flex-wrap: wrap; }
+.slide-dot {
+  width: 9px; height: 9px;
+  border-radius: 50%;
+  background: #d9dce6;
+  cursor: pointer;
+  transition: background .15s, transform .15s;
+  border: 0;
+  padding: 0;
+}
+.slide-dot:hover { transform: scale(1.2); }
+.slide-dot.active { background: var(--accent); }
+
+.slide-title { font-size: 23px; font-weight: 700; margin: 4px 0 16px; line-height: 1.3; }
+.slide-bullets { margin: 0; padding-left: 22px; }
+.slide-bullets li { margin-bottom: 11px; font-size: 15px; line-height: 1.55; }
+.slide-bullets li:last-child { margin-bottom: 0; }
+
 /* ---------- Skeletons, empty states, toasts ---------- */
 
 .skel {

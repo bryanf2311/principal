@@ -95,7 +95,7 @@ function renderToday(sessions, { courseById, lessonIndex, todayMaterials }) {
       ${lesson?.objective ? `<p class="hero-body"><strong>Objective:</strong> ${esc(lesson.objective)}</p>` : ''}
       ${lesson?.homework ? `<p class="hero-body"><strong>Homework:</strong> ${esc(lesson.homework)}</p>` : ''}
       ${materials.length ? `<p class="hero-label" style="margin:14px 0 8px">Materials</p>
-        <div class="stack">${materials.map(materialLink).join('')}</div>` : ''}
+        <div class="stack">${materials.map((m) => materialLink(m, s.courseId, s.lessonId)).join('')}</div>` : ''}
     `, { cls: 'hero' });
   }).join('');
 

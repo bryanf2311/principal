@@ -286,7 +286,7 @@ const APP_RESULTS = ['correct', 'partially_correct', 'needs_work'];
 const SEVERITIES = ['critical', 'major', 'minor'];
 const MILESTONE_STATUSES = ['not_started', 'in_progress', 'achieved', 'behind'];
 const SESSION_STATUSES = ['upcoming', 'completed', 'cancelled'];
-const MATERIAL_TYPES = ['video', 'reading', 'quiz'];
+const MATERIAL_TYPES = ['video', 'reading', 'quiz', 'slides'];
 
 function validateGapReport(body) {
   if (!body.sessionId) return 'sessionId is required.';
@@ -297,6 +297,15 @@ function validateGapReport(body) {
   }
   for (const g of body.identifiedGaps || []) {
     if (!g.description || !SEVERITIES.includes(g.severity)) return `each identifiedGaps entry needs description and severity of ${SEVERITIES.join(', ')}.`;
+  }
+  return null;
+}
+
+function validateSlides(slides) {
+  if (!Array.isArray(slides) || !slides.length) return 'slides must be a non-empty array.';
+  for (const [i, s] of slides.entries()) {
+    if (!s || !s.title) return `slides[${i}].title is required.`;
+    if (!Array.isArray(s.bullets) || !s.bullets.length) return `slides[${i}].bullets must be a non-empty array of strings.`;
   }
   return null;
 }
@@ -348,7 +357,7 @@ const USAGE = `principal.mjs — teacher tool for Principal
   milestones
   milestone <id> <status> [--notes=TEXT]
   lesson <json|@file|->           create a lesson (materials may nest)
-  material <lessonId> <json>      attach one material to a lesson
+  material <lessonId> <json>      attach one material (video/reading/quiz/slides)
   quiz <json|@file|->             create an auto-graded multiple-choice quiz
   attempts [--quizId=ID]          the student's graded quiz attempts
   assessments                     the student's self-assessments
@@ -497,11 +506,16 @@ async function main() {
       const materialIds = [];
       for (const [i, material] of (body.materials || []).entries()) {
         if (!MATERIAL_TYPES.includes(material.type)) throw new Error(`materials[${i}].type must be one of ${MATERIAL_TYPES.join(', ')}.`);
+        if (material.type === 'slides') {
+          const problem = validateSlides(material.slides);
+          if (problem) throw new Error(`materials[${i}].${problem}`);
+        }
         const created = await createDoc(session, `courses/${course.id}/lessons/${lesson.id}/materials`, {
           type: material.type,
           title: material.title || '',
           url: material.url || '',
           durationMin: material.type === 'video' ? Number(material.durationMin || 0) : 0,
+          ...(material.type === 'slides' ? { slides: material.slides } : {}),
           order: Number.isFinite(Number(material.order)) ? Number(material.order) : i + 1,
         });
         materialIds.push(created.id);
@@ -515,6 +529,10 @@ async function main() {
       const body = readPayload(positional[2]);
       if (!lessonId) throw new Error('Usage: material <lessonId> <json>');
       if (!MATERIAL_TYPES.includes(body.type)) throw new Error(`type must be one of ${MATERIAL_TYPES.join(', ')}.`);
+      if (body.type === 'slides') {
+        const problem = validateSlides(body.slides);
+        if (problem) throw new Error(problem);
+      }
       const course = await requireCourse(session, body.courseId || flags.course);
       const existing = await materialsOf(session, course.id, lessonId);
       const created = await createDoc(session, `courses/${course.id}/lessons/${lessonId}/materials`, {
@@ -522,6 +540,7 @@ async function main() {
         title: body.title || '',
         url: body.url || '',
         durationMin: body.type === 'video' ? Number(body.durationMin || 0) : 0,
+        ...(body.type === 'slides' ? { slides: body.slides } : {}),
         order: Number.isFinite(Number(body.order)) ? Number(body.order) : existing.length + 1,
       });
       out({ courseId: course.id, lessonId, materialId: created.id });

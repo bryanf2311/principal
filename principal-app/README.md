@@ -25,7 +25,7 @@ principal-app/
     seed.js               in-browser seeder (Admin → Seed demo data)
     pages/
       login.js  studentDashboard.js  teacherDashboard.js
-      adminDashboard.js  quiz.js
+      adminDashboard.js  quiz.js  lecture.js
   agent-skill/            what an OpenClaw teacher agent needs
     principal-teacher/principal.mjs  the agent's tool (zero deps, Node 18+)
     principal-teacher/SKILL.md       installable skill (full reference)
@@ -231,6 +231,35 @@ admin sees course health, every gap report the agents filed, quiz results and th
 above. The teacher dashboard still works for a human teacher, and admins can open it to see what an
 agent has been doing.
 
+## Lectures — an actual slide deck, not just links
+
+Videos and readings point Bryan somewhere else; a lecture is real content he clicks through in the
+dashboard itself, one slide at a time — a title, a few bullet points, optional speaker notes he can
+expand. It is a `materials` entry like video/reading/quiz, with `type: "slides"` and a `slides` array.
+
+**A human teacher** builds one from the teacher dashboard's **Lectures** section: title, pick the
+lesson, add slides (bullet points are one per line in a textarea — no separate add-bullet UI to fight
+with).
+
+**An agent** does the same over `principal.mjs`:
+
+```bash
+node principal.mjs material LESSON_ID '{
+  "type": "slides",
+  "title": "Systems of Equations: Elimination",
+  "slides": [
+    {"title": "Why elimination?", "bullets": ["Cancels a variable by adding or subtracting the equations"]},
+    {"title": "Step 1", "bullets": ["Match a coefficient, then add"], "notes": "Show the sign-flip if he asks why."}
+  ]
+}'
+```
+
+Either way, it shows up right where the other materials do — **Today's Classes** for the student,
+**Today's Class** and the lesson plan for the teacher — with a 📽️ icon and a slide count instead of
+an outbound link. Opening it goes to `#/lecture/:courseId/:lessonId/:materialId`: previous/next,
+click-any-dot navigation, arrow-key support, a progress bar, and a **Finish** button on the last slide.
+Nothing about viewing it is graded or recorded — it is instructional content, not an assessment.
+
 ## Taking classes as the admin
 
 An admin is also a student here: **My Classes** in the sidebar opens the student dashboard, and quizzes
@@ -244,9 +273,10 @@ course.
 | --- | --- | --- |
 | `#/login` | everyone | email/password + Google, password reset |
 | `#/dashboard` | student, admin | today's classes, stats, upcoming timeline, progress, quizzes, activity, reflection |
-| `#/teacher` | teacher, admin | today's class, lesson plan, progress, gap report form, quiz authoring/results, history, API key |
+| `#/teacher` | teacher, admin | today's class, lesson plan, progress, gap report form, quiz/lecture authoring, results, history, agent access |
 | `#/admin` | admin | courses, teachers, all gap reports (searchable), quiz results, system health, add course/teacher, seeding |
 | `#/quiz/:quizId` | everyone signed in | timed quiz; teachers and admins see it in preview mode (attempts are not saved) |
+| `#/lecture/:courseId/:lessonId/:materialId` | everyone signed in | click-through slide deck for a `slides`-type material |
 
 ## How the derived numbers work
 

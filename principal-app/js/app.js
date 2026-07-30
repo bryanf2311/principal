@@ -12,6 +12,7 @@ import * as studentPage from './pages/studentDashboard.js';
 import * as teacherPage from './pages/teacherDashboard.js';
 import * as adminPage from './pages/adminDashboard.js';
 import * as quizPage from './pages/quiz.js';
+import * as lecturePage from './pages/lecture.js';
 
 /* Imports are hoisted, so reaching this line means the whole module graph —
    including the Firebase SDK — loaded. The fallback in index.html watches it. */
@@ -39,6 +40,7 @@ const ROUTES = [
   { pattern: /^\/teacher$/, page: teacherPage, roles: ['teacher', 'admin'], title: 'Teacher Dashboard' },
   { pattern: /^\/admin$/, page: adminPage, roles: ['admin'], title: 'Admin Dashboard' },
   { pattern: /^\/quiz\/([^/]+)$/, page: quizPage, roles: ['student', 'teacher', 'admin'], title: 'Quiz', chrome: true },
+  { pattern: /^\/lecture\/([^/]+)\/([^/]+)\/([^/]+)$/, page: lecturePage, roles: ['student', 'teacher', 'admin'], title: 'Lecture', chrome: true },
 ];
 
 const NAV = {
@@ -57,6 +59,7 @@ const NAV = {
     { icon: '📈', label: 'Student Progress', href: '#/teacher', scroll: 'sec-progress' },
     { icon: '🩺', label: 'File Gap Report', href: '#/teacher', scroll: 'sec-gap' },
     { icon: '📝', label: 'Quizzes', href: '#/teacher', scroll: 'sec-quiz' },
+    { icon: '📽️', label: 'Lectures', href: '#/teacher', scroll: 'sec-lecture' },
     { icon: '🕘', label: 'Session History', href: '#/teacher', scroll: 'sec-history' },
     { icon: '🤖', label: 'Agent access', href: '#/teacher', scroll: 'sec-api' },
   ],

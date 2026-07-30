@@ -39,9 +39,12 @@ Fixed vocabularies, rejected if you stray: `warmupResults[].result` is `correct`
 `in_progress` | `achieved` | `behind`.
 
 You may also build curriculum — `node principal.mjs lesson '{...}'` (materials can nest),
-`material <lessonId> '{...}'`, and `quiz '{...}'` for auto-graded multiple choice — and check how
-Bryan is doing with `attempts` and `assessments` (his own 1–5 ratings and notes; take them seriously
-when they disagree with your read).
+`material <lessonId> '{...}'`, and `quiz '{...}'` for auto-graded multiple choice. To give an actual
+lecture instead of just linking out, use `material` with `"type": "slides"` and a `slides` array of
+`{title, bullets: [...], notes?}` — Bryan clicks through it on his own dashboard, one slide at a time;
+write bullets the way you would say them, not full paragraphs. Check how Bryan is doing with
+`attempts` and `assessments` (his own 1–5 ratings and notes; take them seriously when they disagree
+with your read).
 
 Never invent an observation: a gap report records a session that actually happened, one report per
 session, and an empty `identifiedGaps` array is the right answer when there were no gaps. Write

@@ -5,7 +5,7 @@
    ============================================================ */
 
 import {
-  listCourses, listLessons, listMaterials, listMilestones, updateMilestone,
+  listCourses, listLessons, listMaterials, createMaterial, listMilestones, updateMilestone,
   listSessions, updateSession, listGapReports, createGapReport,
   listQuizzes, createQuiz, listQuizAttempts, listStudentAssessments,
   milestoneProgress, courseHealth, warmupScore, averageWarmup, trendOf, quizAverage,
@@ -85,6 +85,7 @@ export async function render(mount, ctx) {
     renderProgress(ctxData),
     renderGapForm(ctxData),
     renderQuizPanels(ctxData),
+    renderLecturePanel(ctxData),
     renderHistory(ctxData),
     renderAgentPanel(ctx, isOwner),
   ].join('')}</div>`;
@@ -123,7 +124,7 @@ function renderToday({ todaySessions, lessonById, course, materialsByLesson }) {
       ${lesson?.objective ? `<p class="hero-body"><strong>Objective:</strong> ${esc(lesson.objective)}</p>` : ''}
       ${lesson?.activities ? `<p class="hero-body"><strong>Activities:</strong> ${esc(lesson.activities)}</p>` : ''}
       ${materials.length ? `<p class="hero-label" style="margin:14px 0 8px">Materials</p>
-        <div class="stack">${materials.map(materialLink).join('')}</div>` : ''}
+        <div class="stack">${materials.map((m) => materialLink(m, course.id, s.lessonId)).join('')}</div>` : ''}
       ${s.status !== 'completed'
         ? `<div class="row" style="margin-top:16px">
              <button class="btn btn-sm" data-complete="${esc(s.id)}">✓ Mark completed</button>
@@ -157,7 +158,7 @@ function renderCourse({ course, lessons, materialsByLesson, milestones }) {
             <dt>Activities</dt><dd>${esc(l.activities || '—')}</dd>
             <dt>Homework</dt><dd>${esc(l.homework || '—')}</dd>
           </dl>
-          ${materials.length ? `<div class="stack" style="margin-top:12px">${materials.map(materialLink).join('')}</div>`
+          ${materials.length ? `<div class="stack" style="margin-top:12px">${materials.map((m) => materialLink(m, course.id, l.id)).join('')}</div>`
             : '<p class="tiny muted" style="margin-top:10px">No materials attached.</p>'}
         </div>
       </details>`;
@@ -384,6 +385,35 @@ function renderQuizPanels({ quizzes, attemptsByQuiz, lessons }) {
   `, { id: 'sec-quiz' });
 }
 
+function renderLecturePanel({ lessons }) {
+  if (!lessons.length) {
+    return section('📽️ Lectures', card(empty('Add a lesson first — a lecture attaches to a specific lesson.', '📽️')), { id: 'sec-lecture' });
+  }
+  const lessonOptions = lessons.map((l) => `<option value="${esc(l.id)}">
+    W${esc(l.weekNumber)}S${esc(l.sessionNumber)} — ${esc(l.topic || 'lesson')}</option>`).join('');
+
+  return section('📽️ Lectures', card(`
+    <form id="lecture-form">
+      <div data-error></div>
+      <div class="field-row">
+        <div class="field">
+          <label for="lecture-title">Lecture title</label>
+          <input id="lecture-title" name="title" type="text" required placeholder="Cloud Computing Basics">
+        </div>
+        <div class="field">
+          <label for="lecture-lesson">Attach to lesson</label>
+          <select id="lecture-lesson" name="lessonId" required>${lessonOptions}</select>
+        </div>
+      </div>
+      <div id="slide-rows"></div>
+      <button class="btn btn-sm" type="button" id="add-slide">＋ Add slide</button>
+      <div style="margin-top:16px"><button class="btn btn-primary" type="submit">Create lecture</button></div>
+    </form>`, {
+    title: 'Create a lecture',
+    sub: 'Simple slides your student clicks through, right in the dashboard',
+  }), { id: 'sec-lecture' });
+}
+
 function renderHistory({ past, lessonById, filedFor, isOwner }) {
   const body = past.length ? `<div class="table-wrap"><table class="table">
       <thead><tr><th>Date</th><th>Topic</th><th>Status</th><th>Gap report</th><th>Notes</th></tr></thead>
@@ -495,6 +525,26 @@ function questionRow(i) {
   </fieldset>`;
 }
 
+function slideRow(i) {
+  return `<fieldset class="sub" data-slide>
+    <legend>Slide <span data-num>${i + 1}</span></legend>
+    <div class="field">
+      <label>Title</label>
+      <input type="text" name="slideTitle" required placeholder="What is the Cloud?">
+    </div>
+    <div class="field">
+      <label>Bullet points (one per line)</label>
+      <textarea name="slideBullets" required placeholder="On-demand computing resources over the internet
+Pay only for what you use"></textarea>
+    </div>
+    <div class="field">
+      <label>Speaker notes (optional)</label>
+      <textarea name="slideNotes" placeholder="Mention AWS/Azure/GCP as real examples."></textarea>
+    </div>
+    <button class="btn btn-sm btn-danger" type="button" data-remove-slide>✕ Remove slide</button>
+  </fieldset>`;
+}
+
 function repeater(container, addBtn, factory, { min = 1 } = {}) {
   if (!container || !addBtn) return;
   const renumber = () => {
@@ -511,9 +561,9 @@ function repeater(container, addBtn, factory, { min = 1 } = {}) {
   for (let i = 0; i < min; i += 1) add();
   addBtn.addEventListener('click', add);
   container.addEventListener('click', (event) => {
-    const btn = event.target.closest('[data-remove], [data-remove-question]');
+    const btn = event.target.closest('[data-remove], [data-remove-question], [data-remove-slide]');
     if (!btn) return;
-    const row = btn.closest('[data-row], [data-question]');
+    const row = btn.closest('[data-row], [data-question], [data-slide]');
     if (row && container.children.length > 1) { row.remove(); renumber(); }
     else toast('At least one entry is required.');
   });
@@ -649,6 +699,38 @@ function wire(root, mount, ctx, data) {
     });
   }
 
+  /* ---- lecture creation form ---- */
+  const lectureForm = root.querySelector('#lecture-form');
+  if (lectureForm) {
+    repeater(lectureForm.querySelector('#slide-rows'), lectureForm.querySelector('#add-slide'), slideRow, { min: 1 });
+
+    bindForm(lectureForm, async (fd) => {
+      const blocks = [...lectureForm.querySelectorAll('[data-slide]')];
+      const slides = blocks.map((block) => ({
+        title: block.querySelector('[name=slideTitle]').value.trim(),
+        bullets: block.querySelector('[name=slideBullets]').value
+          .split('\n').map((line) => line.trim()).filter(Boolean),
+        notes: block.querySelector('[name=slideNotes]').value.trim(),
+      })).filter((s) => s.title && s.bullets.length);
+
+      if (!slides.length) throw new Error('Add at least one slide with a title and at least one bullet point.');
+
+      const lessonId = String(fd.get('lessonId') || '');
+      if (!lessonId) throw new Error('Pick a lesson to attach this lecture to.');
+
+      const existing = data.materialsByLesson[lessonId] || [];
+      await createMaterial(data.course.id, lessonId, {
+        type: 'slides',
+        title: String(fd.get('title') || '').trim(),
+        url: '',
+        durationMin: 0,
+        slides,
+        order: existing.length + 1,
+      });
+      toast('Lecture created.', 'ok');
+      reload();
+    });
+  }
 }
 
 /* ------------------------------------------------------------- viewers */

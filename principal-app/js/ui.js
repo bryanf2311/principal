@@ -151,10 +151,28 @@ const KIND_MAP = {
 export const kindFor = (value) => KIND_MAP[value] || 'gray';
 export const humanize = (value) => String(value || '').replace(/_/g, ' ');
 
-export const MATERIAL_ICON = { video: '▶️', reading: '📖', quiz: '📝' };
+export const MATERIAL_ICON = { video: '▶️', reading: '📖', quiz: '📝', slides: '📽️' };
 
-export function materialLink(m) {
+/**
+ * A single material's link/button. `slides` materials are an in-app lecture:
+ * courseId + lessonId are needed to build the viewer route, since the
+ * material doc itself only knows its own id.
+ */
+export function materialLink(m, courseId, lessonId) {
   const ico = MATERIAL_ICON[m.type] || '🔗';
+
+  if (m.type === 'slides') {
+    const count = Array.isArray(m.slides) ? m.slides.length : 0;
+    const href = courseId && lessonId
+      ? `#/lecture/${encodeURIComponent(courseId)}/${encodeURIComponent(lessonId)}/${encodeURIComponent(m.id)}`
+      : '#';
+    return `<a class="mat" href="${href}">
+      <span class="mat-ico">${ico}</span>
+      <span class="mat-title">${esc(m.title || 'Untitled lecture')}</span>
+      <span class="mat-meta">${count} slide${count === 1 ? '' : 's'}</span>
+    </a>`;
+  }
+
   const meta = m.type === 'video' && m.durationMin ? `${m.durationMin} min` : humanize(m.type || 'link');
   const href = m.url ? esc(m.url) : '#';
   return `<a class="mat" href="${href}" ${m.url ? 'target="_blank" rel="noopener noreferrer"' : ''}>
