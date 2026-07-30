@@ -26,11 +26,20 @@
  */
 import * as ed from '@noble/ed25519';
 import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import WebSocket from 'ws';
 
 const GATEWAY_URL = process.env.GATEWAY_URL || 'ws://127.0.0.1:18789';
 const GATEWAY_TOKEN = process.env.GATEWAY_TOKEN || '';   // shared gateway password/token, if you want to try it
 const ORIGIN = process.env.GATEWAY_ORIGIN || 'http://127.0.0.1:18789';
+
+// Persisted next to this script so re-running it (e.g. after approving the
+// pending request) reuses the SAME device identity instead of minting a new
+// one every time — a fresh identity each run would mean each run's pending
+// pairing request is abandoned, and approving an earlier one does nothing.
+const IDENTITY_PATH = path.join(path.dirname(fileURLToPath(import.meta.url)), 'device-identity.json');
 
 function b64url(bytes) {
   return Buffer.from(bytes).toString('base64url');
@@ -46,12 +55,24 @@ async function generateIdentity() {
   return { deviceId, publicKey: b64url(publicKey), privateKey: b64url(privateKey) };
 }
 
+async function loadOrCreateIdentity() {
+  if (fs.existsSync(IDENTITY_PATH)) {
+    const stored = JSON.parse(fs.readFileSync(IDENTITY_PATH, 'utf8'));
+    console.log(`(reusing saved identity from ${IDENTITY_PATH})`);
+    return stored;
+  }
+  const identity = await generateIdentity();
+  fs.writeFileSync(IDENTITY_PATH, JSON.stringify(identity, null, 2), { mode: 0o600 });
+  console.log(`(generated a new identity, saved to ${IDENTITY_PATH})`);
+  return identity;
+}
+
 function buildDeviceAuthPayloadV2({ deviceId, clientId, clientMode, role, scopes, signedAtMs, token, nonce }) {
   return ['v2', deviceId, clientId, clientMode, role, scopes.join(','), String(signedAtMs), token ?? '', nonce].join('|');
 }
 
 async function main() {
-  const identity = await generateIdentity();
+  const identity = await loadOrCreateIdentity();
   console.log('Device identity (save all three — they go in openclaw-config.js):');
   console.log('  deviceId:  ', identity.deviceId);
   console.log('  publicKey: ', identity.publicKey);
