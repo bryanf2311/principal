@@ -368,6 +368,25 @@ body.auth-mode .view { padding: 0; max-width: none; }
 .tl-date { font-size: 12px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
 .tl-title { font-weight: 600; margin-top: 2px; }
 
+/* Tabs (My Classes) */
+.tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+.tab-btn {
+  padding: 8px 16px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--ink-2);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.tab-btn:hover { border-color: var(--accent); color: var(--ink); }
+.tab-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.tab-panel { display: none; }
+.tab-panel.active { display: block; }
+.cd-date { font-size: 12px; font-weight: 700; color: var(--muted); flex-shrink: 0; }
+.cd-topic { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 /* Lesson plan (expandable) */
 details.lesson {
   border: 1px solid var(--line);
