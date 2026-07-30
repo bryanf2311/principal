@@ -5,20 +5,22 @@
  * (loopback is simplest and most trusted — see README's "Chat with a
  * teacher agent" section for why this is a one-time step rather than
  * something the browser does itself). It will very likely land as a
- * *pending* device the first time — that's expected. Steps:
+ * *pending* device the first time — that's expected:
  *
  *   cd scripts && npm install
  *   node openclaw-pair-device.mjs
  *
- * If it prints "PENDING", go approve it on the VPS:
- *   openclaw-native devices list
- *   openclaw-native devices approve <requestId>
- *   openclaw-native devices rotate --device <deviceId printed below> \
- *     --role operator --scope operator.talk
- * Then run this script again — it should print "CONNECTED" and a
- * deviceToken. Everything it prints (deviceId/publicKey/privateKey/
- * deviceToken) goes into openclaw-config.js — nothing here is sent
- * anywhere except to your own Gateway.
+ * The Gateway closes the connection itself a few seconds after a
+ * PAIRING_REQUIRED response — it does not sit there waiting to be
+ * approved, and a human typing `devices approve` into a second terminal
+ * loses that race almost every time (the CLI alone takes several
+ * seconds just to start). So this script calls `openclaw-native devices
+ * approve <requestId>` ITSELF, immediately, as a child process on this
+ * same machine, then retries the connect — no manual step, no race.
+ *
+ * Everything it prints (deviceId/publicKey/privateKey/deviceToken) goes
+ * into openclaw-config.js — nothing here is sent anywhere except to
+ * your own Gateway and to your own `openclaw-native` CLI.
  *
  * Needs the `ws` package (not the native WebSocket global) because the
  * Gateway checks the WebSocket handshake's Origin header, and only `ws`
@@ -29,7 +31,12 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import WebSocket from 'ws';
+
+const execFileAsync = promisify(execFile);
+const OPENCLAW_BIN = process.env.OPENCLAW_BIN || 'openclaw-native';
 
 const GATEWAY_URL = process.env.GATEWAY_URL || 'ws://127.0.0.1:18789';
 const GATEWAY_TOKEN = process.env.GATEWAY_TOKEN || '';   // shared gateway password/token, if you want to try it
@@ -73,29 +80,21 @@ function buildDeviceAuthPayloadV2({ deviceId, clientId, clientMode, role, scopes
 
 /** One connect attempt. Resolves to {outcome: 'connected', helloOk} |
  * {outcome: 'not-paired', requestId} | {outcome: 'rejected', error} |
- * {outcome: 'no-response'}. Never throws for ordinary protocol outcomes.
- *
- * IMPORTANT: on NOT_PAIRED we do NOT close the socket. The pending
- * pairing request appears to be tied to this specific live connection —
- * closing it (even to "retry" a moment later) destroys the pending
- * request instantly, so `devices approve` never has anything to find.
- * Instead we hold the connection open and wait for the Gateway to push
- * something once it's approved. */
-function attemptConnect(identity, { verbose, onPending, waitMs }) {
+ * {outcome: 'no-response'}. Never throws for ordinary protocol outcomes. */
+function attemptConnect(identity, { verbose }) {
   return new Promise((resolve) => {
     const log = (...args) => { if (verbose) console.log(...args); };
     const ws = new WebSocket(GATEWAY_URL, [], { headers: { Origin: ORIGIN } });
     let settled = false;
-    let deadline = null;
     const finish = (result) => {
       if (settled) return;
       settled = true;
-      clearTimeout(deadline);
+      clearTimeout(timeout);
       try { ws.close(); } catch { /* already closed */ }
       resolve(result);
     };
 
-    deadline = setTimeout(() => finish({ outcome: 'no-response' }), 10_000);
+    const timeout = setTimeout(() => finish({ outcome: 'no-response' }), 10_000);
 
     ws.addEventListener('open', () => log('socket open, waiting for connect.challenge...'));
 
@@ -158,19 +157,6 @@ function attemptConnect(identity, { verbose, onPending, waitMs }) {
       if (msg.type === 'res' && msg.ok === false) {
         const details = msg.error?.details;
         if (details?.code === 'PAIRING_REQUIRED') {
-          if (onPending && !settled) {
-            // Do not finish() — keep the socket open and extend how long
-            // we're willing to wait, instead of tearing the connection
-            // (and the pending request with it) down.
-            onPending(details.requestId);
-            clearTimeout(deadline);
-            deadline = setTimeout(() => finish({ outcome: 'still-pending', requestId: details.requestId }), waitMs ?? 10_000);
-            const heartbeat = setInterval(() => {
-              if (settled) { clearInterval(heartbeat); return; }
-              console.log('... still waiting for approval (socket held open)');
-            }, 15_000);
-            return;
-          }
           finish({ outcome: 'not-paired', requestId: details.requestId });
         } else {
           finish({ outcome: 'rejected', error: msg.error });
@@ -183,6 +169,21 @@ function attemptConnect(identity, { verbose, onPending, waitMs }) {
   });
 }
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function autoApprove(requestId) {
+  console.log(`\nRunning: ${OPENCLAW_BIN} devices approve ${requestId}`);
+  try {
+    const { stdout, stderr } = await execFileAsync(OPENCLAW_BIN, ['devices', 'approve', requestId]);
+    if (stdout.trim()) console.log(stdout.trim());
+    if (stderr.trim()) console.log(stderr.trim());
+    return true;
+  } catch (err) {
+    console.log('approve command failed:', err.stdout?.trim() || err.stderr?.trim() || err.message);
+    return false;
+  }
+}
+
 async function main() {
   const identity = await loadOrCreateIdentity();
   console.log('Device identity (save all three — they go in openclaw-config.js):');
@@ -191,38 +192,46 @@ async function main() {
   console.log('  privateKey:', identity.privateKey);
 
   console.log(`\nConnecting to ${GATEWAY_URL} ...`);
+  const first = await attemptConnect(identity, { verbose: true });
 
-  // Single connection, held open the whole time. If it comes back
-  // PAIRING_REQUIRED we do NOT reconnect — we just keep this same socket
-  // alive and wait, since the pending request lives only as long as the
-  // connection that created it does.
-  const result = await attemptConnect(identity, {
-    verbose: true,
-    waitMs: 3 * 60_000,
-    onPending: (requestId) => {
-      console.log(`\nPENDING — requestId: ${requestId}`);
-      console.log('Approve it now, in another terminal on this VPS (this script will keep');
-      console.log('the connection open and wait — do not re-run it):');
-      console.log(`  openclaw-native devices approve ${requestId}`);
-      console.log('Waiting up to 3 minutes...\n');
-    },
-  });
-
-  if (result.outcome === 'connected') {
-    printConnected(result.helloOk);
+  if (first.outcome === 'connected') {
+    printConnected(first.helloOk);
     process.exit(0);
   }
-  if (result.outcome === 'rejected') {
-    console.log('\nREJECTED:', JSON.stringify(result.error));
+  if (first.outcome === 'rejected') {
+    console.log('\nREJECTED:', JSON.stringify(first.error));
     process.exit(1);
   }
-  if (result.outcome === 'still-pending') {
-    console.log('\nGave up after 3 minutes without approval.');
-    console.log(`Check: openclaw-native devices list  (look for requestId ${result.requestId})`);
-    console.log('Then run this script again once you can see it pending and approve it quickly.');
+  if (first.outcome === 'no-response') {
+    console.log('\nNo response from the Gateway (closeCode:', first.closeCode, first.closeReason, '). Check GATEWAY_URL/connectivity.');
     process.exit(2);
   }
-  console.log('\nNo response from the Gateway (closeCode:', result.closeCode, result.closeReason, '). Check GATEWAY_URL/connectivity.');
+
+  // not-paired: the Gateway closes the connection itself shortly after
+  // this, so there's no point waiting on it or retrying blind. Approve
+  // it ourselves, right now, on this same machine, then reconnect.
+  console.log(`\nPENDING — requestId: ${first.requestId}`);
+  await autoApprove(first.requestId);
+
+  for (let attempt = 1; attempt <= 5; attempt += 1) {
+    await sleep(1500);
+    console.log(`\nreconnect attempt ${attempt}/5 ...`);
+    const retry = await attemptConnect(identity, { verbose: true });
+    if (retry.outcome === 'connected') {
+      printConnected(retry.helloOk);
+      process.exit(0);
+    }
+    if (retry.outcome === 'rejected') {
+      console.log('\nREJECTED:', JSON.stringify(retry.error));
+      process.exit(1);
+    }
+    if (retry.outcome === 'not-paired') {
+      console.log(`still not-paired (requestId: ${retry.requestId}) — approving again and retrying...`);
+      await autoApprove(retry.requestId);
+    }
+  }
+  console.log('\nGave up after 5 reconnect attempts. Run: openclaw-native devices list');
+  console.log('to see whether the device shows as paired, and check the approve output above for errors.');
   process.exit(2);
 }
 
