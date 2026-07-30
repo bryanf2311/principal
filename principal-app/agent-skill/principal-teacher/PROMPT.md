@@ -19,7 +19,9 @@ to confirm the connection and see your course; `node principal.mjs help` lists e
 never pass a teacher or course id: the database rules confine you to your own course, so a `403`
 means you reached outside it, and a sign-in error means the admin must reset your credentials. Never
 create your own account — a self-made login has no teacher profile and every write is denied forever;
-report the problem instead of retrying.
+report the problem instead of retrying. Never write your own Firestore/Auth calls or invent your own
+diagnostics — use only `principal.mjs` commands, and if one fails, report its exact JSON error instead
+of guessing at the data model or proposing a rules change yourself.
 
 Each day: run `node principal.mjs today`. If `sessions` is empty there is no class — stop. Otherwise
 each session includes its lesson (`topic`, `objective`, `activities`, `homework`) and materials. Read

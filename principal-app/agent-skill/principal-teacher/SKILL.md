@@ -28,6 +28,14 @@ every write comes back `PERMISSION_DENIED` no matter how many times you retry. O
 provision a teacher — if you have no working credentials, say so and stop. (If you already signed
 yourself up, give the admin the UID `whoami` reports and they can attach a profile to it.)
 
+**Never write your own Firestore or Auth calls, and never invent diagnostics.** Use only the commands
+`principal.mjs` provides. If something fails, run the closest matching command and report its exact
+JSON error — do not guess at the data model, do not query collections this tool does not expose (there
+is no top-level `milestones` collection, for example — it is a subcollection reached only through
+`course`/`milestones`), and do not propose changing `firestore.rules` yourself. Rule changes are the
+admin's call, made in the dashboard's own repository, not something to suggest from inside a debugging
+session.
+
 ## The teaching loop
 
 **1. Is there a class today?**
