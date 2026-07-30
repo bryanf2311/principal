@@ -344,6 +344,7 @@ const SEVERITIES = ['critical', 'major', 'minor'];
 const MILESTONE_STATUSES = ['not_started', 'in_progress', 'achieved', 'behind'];
 const SESSION_STATUSES = ['upcoming', 'completed', 'cancelled'];
 const MATERIAL_TYPES = ['video', 'reading', 'quiz', 'slides'];
+const HOMEWORK_TYPES = ['reading', 'video', 'practice'];
 
 function validateGapReport(body) {
   if (!body.sessionId) return 'sessionId is required.';
@@ -412,6 +413,12 @@ function validateMilestoneCreate(body) {
   return null;
 }
 
+function validateHomeworkCreate(body) {
+  if (!HOMEWORK_TYPES.includes(body.type)) return `type must be one of ${HOMEWORK_TYPES.join(', ')}.`;
+  if (!body.title) return 'title is required.';
+  return null;
+}
+
 /* -------------------------------------------------------------- CLI */
 
 function parseArgs(argv) {
@@ -450,6 +457,7 @@ const USAGE = `principal.mjs — teacher tool for Principal
   course-create <json|@file|->    create your own course; {title, slot?, ...}
   session-create <json|@file|->   schedule a session; {lessonId, scheduledDate, scheduledTime, status?}
   milestone-create <json|@file|-> add a milestone; {description, targetWeek, status?}
+  homework-create <json|@file|-> assign homework; {type: reading|video|practice, title, details?, url?, lessonId?}
   lesson <json|@file|->           create a lesson (materials may nest)
   material <lessonId> <json>      attach one material (video/reading/quiz/slides)
   quiz <json|@file|->             create an auto-graded multiple-choice quiz
@@ -638,6 +646,28 @@ async function main() {
         targetWeek: Number(body.targetWeek),
         status: body.status || 'not_started',
         notes: body.notes || '',
+      });
+      out({ id: created.id, courseId: course.id });
+      return;
+    }
+
+    case 'homework-create': {
+      const body = readPayload(positional[1]);
+      const problem = validateHomeworkCreate(body);
+      if (problem) throw new Error(problem);
+      const course = await requireCourse(session, body.courseId || flags.course);
+      const created = await createDoc(session, 'homework', {
+        courseId: course.id,
+        teacherId: session.uid,
+        lessonId: body.lessonId || null,
+        type: body.type,
+        title: body.title,
+        details: body.details || '',
+        url: body.url || '',
+        status: 'assigned',
+        completedAt: null,
+        createdAt: new Date(),
+        source: 'agent',
       });
       out({ id: created.id, courseId: course.id });
       return;

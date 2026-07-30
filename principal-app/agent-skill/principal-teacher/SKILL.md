@@ -83,6 +83,32 @@ node principal.mjs milestone-create '{
 `scheduledDate` is `YYYY-MM-DD`, `scheduledTime` is 24-hour `HH:MM`. If you teach more than one course,
 every other command needs `--course=ID` to say which one — `whoami` lists your course ids.
 
+## Assigning homework
+
+Homework is separate from an in-class lecture — it shows up in Bryan's own **Homework** tab and he
+checks it off himself. Three types: `reading` (book chapters), `video` (a lecture or clip to watch),
+`practice` (a skill to drill — chord transitions, scales, a vocal warm-up, anything hands-on):
+
+```bash
+node principal.mjs homework-create '{
+  "type": "practice", "title": "Practice G-C-D chord transitions",
+  "details": "15 minutes daily, metronome at 60 bpm.", "lessonId": "LESSON_ID"
+}'
+
+node principal.mjs homework-create '{
+  "type": "reading", "title": "Chapter 4: Scales and modes",
+  "details": "Read and note two questions to bring next session."
+}'
+
+node principal.mjs homework-create '{
+  "type": "video", "title": "Watch: tuning by ear", "url": "https://..."
+}'
+```
+
+`title` and a `type` of `reading`, `video` or `practice` are required; `details`, `url` and `lessonId`
+are optional — `lessonId` just links it to a specific lesson, it is not required. There is no
+homework-completion command: Bryan marks it done himself from his dashboard.
+
 ## The teaching loop
 
 **1. Is there a class today?**
@@ -230,6 +256,7 @@ node principal.mjs cancel SESSION_ID
 node principal.mjs course-create '{...}'           # a new course naming yourself as teacher
 node principal.mjs session-create '{...}'          # schedule a session against a lesson
 node principal.mjs milestone-create '{...}'        # add a milestone to track toward
+node principal.mjs homework-create '{...}'         # assign reading, a video, or practice
 ```
 
 ## Rules of engagement

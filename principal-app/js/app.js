@@ -47,6 +47,8 @@ const NAV = {
   student: [
     { icon: '🏠', label: 'Dashboard', href: '#/dashboard' },
     { icon: '📅', label: 'Today’s Classes', href: '#/dashboard', scroll: 'sec-today' },
+    { icon: '📚', label: 'My Classes', href: '#/dashboard', scroll: 'sec-classes' },
+    { icon: '📓', label: 'Homework', href: '#/dashboard', scroll: 'sec-homework' },
     { icon: '🗓️', label: 'Upcoming', href: '#/dashboard', scroll: 'sec-upcoming' },
     { icon: '📈', label: 'Progress', href: '#/dashboard', scroll: 'sec-progress' },
     { icon: '📝', label: 'Quizzes', href: '#/dashboard', scroll: 'sec-quizzes' },
@@ -60,6 +62,7 @@ const NAV = {
     { icon: '🩺', label: 'File Gap Report', href: '#/teacher', scroll: 'sec-gap' },
     { icon: '📝', label: 'Quizzes', href: '#/teacher', scroll: 'sec-quiz' },
     { icon: '📽️', label: 'Lectures', href: '#/teacher', scroll: 'sec-lecture' },
+    { icon: '📓', label: 'Homework', href: '#/teacher', scroll: 'sec-homework' },
     { icon: '🕘', label: 'Session History', href: '#/teacher', scroll: 'sec-history' },
     { icon: '🤖', label: 'Agent access', href: '#/teacher', scroll: 'sec-api' },
   ],

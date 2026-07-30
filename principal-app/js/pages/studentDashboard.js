@@ -7,24 +7,27 @@
 import {
   listCourses, listLessons, listMaterialsForLessons, listMilestones, listSessions,
   listGapReports, listQuizzes, listQuizAttempts, createStudentAssessment,
+  listHomework, setHomeworkStatus,
   milestoneProgress, courseHealth, currentStreak, averageWarmup, warmupScore,
   HEALTH_LABEL,
 } from '../api.js';
 import {
   esc, section, card, badge, bar, empty, healthDot, materialLink, skeletonPage,
   fmtDate, fmtTime, fmtAgo, todayYMD, addDaysYMD, kindFor, humanize, pct, toast, bindForm,
+  HOMEWORK_TYPE_ICON,
 } from '../ui.js';
 
 export async function render(mount, ctx) {
   mount.innerHTML = skeletonPage();
 
   const today = todayYMD();
-  const [courses, allSessions, reports, quizzes, attempts] = await Promise.all([
+  const [courses, allSessions, reports, quizzes, attempts, homework] = await Promise.all([
     listCourses(),
     listSessions(),
     listGapReports(),
     listQuizzes(),
     listQuizAttempts({ userId: ctx.user.uid }),
+    listHomework(),
   ]);
 
   const perCourse = await Promise.all(courses.map(async (course) => ({
@@ -59,6 +62,7 @@ export async function render(mount, ctx) {
   mount.innerHTML = [
     renderToday(todaySessions, { courseById, lessonIndex, todayMaterials }),
     renderClasses(perCourse, { allSessions, lessonIndex, today }),
+    renderHomework(homework, { courseById }),
     renderStats({ completed, allSessions, reports, today }),
     renderUpcoming(upcoming, { courseById, lessonIndex }),
     renderProgress(perCourse, { reports, sessionById }),
@@ -172,6 +176,47 @@ function classDateDetailHtml(session, { course, lesson, materials, report }) {
         </div>` : '<p class="small muted">No gaps identified.</p>'}
       ${report.remediationPlan ? `<p class="small" style="margin-top:8px"><strong>Plan:</strong> ${esc(report.remediationPlan)}</p>` : ''}
     ` : (session.status === 'completed' ? '<p class="small muted" style="margin-top:12px">No gap report filed for this session yet.</p>' : '')}`;
+}
+
+function homeworkRow(h, { courseById }, { done }) {
+  const course = courseById.get(h.courseId);
+  return `<div class="row">
+    <span>${HOMEWORK_TYPE_ICON[h.type] || '📌'}</span>
+    <span class="small" style="flex:1;min-width:160px">
+      <span class="strong">${esc(h.title)}</span>
+      <span class="tiny muted"> · ${esc(course?.title || 'Course')}</span>
+      ${h.details ? `<br><span class="muted">${esc(h.details)}</span>` : ''}
+    </span>
+    ${h.url ? `<a class="btn btn-sm" href="${esc(h.url)}" target="_blank" rel="noopener noreferrer">Open ↗</a>` : ''}
+    <button class="btn btn-sm ${done ? '' : 'btn-primary'}" data-hw-toggle="${esc(h.id)}" data-hw-done="${done ? '0' : '1'}">
+      ${done ? '↺ Mark not done' : '✓ Mark done'}
+    </button>
+  </div>`;
+}
+
+/** Reading chapters, lectures/videos to watch, or skill practice (guitar,
+    singing, …) — anything a teacher assigns outside of class time. */
+function renderHomework(homework, { courseById }) {
+  if (!homework.length) {
+    return section('📓 Homework', card(empty('No homework assigned yet — it will show up here as soon as a teacher assigns some.', '📓')), { id: 'sec-homework' });
+  }
+
+  const pending = homework.filter((h) => h.status !== 'done');
+  const done = homework.filter((h) => h.status === 'done');
+
+  const pendingBody = pending.length
+    ? `<div class="stack divide">${pending.map((h) => homeworkRow(h, { courseById }, { done: false })).join('')}</div>`
+    : empty('Nothing pending — nice work.', '✅');
+
+  const doneBody = done.length ? `<details class="lesson" style="margin-top:14px">
+      <summary>Completed (${done.length})</summary>
+      <div class="lesson-body stack divide">${done.map((h) => homeworkRow(h, { courseById }, { done: true })).join('')}</div>
+    </details>` : '';
+
+  return section('📓 Homework', card(`${pendingBody}${doneBody}`, {
+    title: 'Reading, videos & practice',
+    sub: `${pending.length} pending`,
+  }), { id: 'sec-homework' });
 }
 
 function renderStats({ completed, allSessions, reports, today }) {
@@ -393,6 +438,21 @@ function wire(mount, ctx, { courseById, allSessions, lessonIndex, reports }) {
       toast('Reflection saved — thanks!', 'ok');
     });
   }
+
+  const homeworkSection = mount.querySelector('#sec-homework');
+  homeworkSection?.addEventListener('click', async (event) => {
+    const btn = event.target.closest('[data-hw-toggle]');
+    if (!btn) return;
+    btn.disabled = true;
+    try {
+      await setHomeworkStatus(btn.dataset.hwToggle, btn.dataset.hwDone === '1');
+      render(mount, ctx);
+    } catch (err) {
+      console.error(err);
+      toast(`Could not update homework: ${err.message}`, 'err');
+      btn.disabled = false;
+    }
+  });
 
   const classesSection = mount.querySelector('#sec-classes');
   if (!classesSection) return;

@@ -163,7 +163,8 @@ instead of clicking through the dashboard yourself.
 web API key (see the block below). Tell it what course to set up in plain language; it runs
 `node principal.mjs setup '{"name": "..."}'` to create its own login and `role: "teacher"` profile
 (never admin, never student, never another teacher's data — the key only proves the admin issued it),
-then `course-create`, `lesson`, `session-create` and `milestone-create` to build out the class itself.
+then `course-create`, `lesson`, `session-create`, `milestone-create` and `homework-create` to build
+out the class itself.
 Rotate the key any time from the same panel; that invalidates it for anyone who hasn't used it yet
 without touching agents that already provisioned themselves.
 
@@ -224,6 +225,7 @@ API so the agent never handles typed Firestore JSON.
 | `course-create <json>` | create a course naming yourself as its teacher |
 | `session-create <json>` | schedule a session against one of your lessons |
 | `milestone-create <json>` | add a milestone to one of your courses |
+| `homework-create <json>` | assign reading, a video, or practice — shows up in the student's Homework tab |
 | `lesson <json>` / `material <lessonId> <json>` | build curriculum, including `type: "slides"` lectures |
 | `quiz <json>` | create an auto-graded multiple-choice quiz |
 | `attempts [--quizId=]` | the student's graded quiz attempts |
@@ -240,8 +242,8 @@ own course's lessons, materials, milestones and sessions, file gap reports under
 and create quizzes for its own course. A signed-in account holding the *current* admin-issued setup key
 may create exactly one thing for itself: a `users/{uid}` profile with `role: "teacher"` — never
 `admin`, never `student`, and it can never touch another uid. Anything else — another teacher's course,
-promoting itself, writing the student's quiz answers — is refused by Firestore. Covered by 98 rules
-assertions and 51 end-to-end CLI assertions against the emulator.
+promoting itself, writing the student's quiz answers — is refused by Firestore. Covered by 109 rules
+assertions and 56 end-to-end CLI assertions against the emulator.
 
 Note that anyone can *create* a Firebase Auth login (that is how email/password sign-up works), but a
 login with no `users/{uid}` profile can do nothing at all: the setup key is what turns that login into
@@ -283,6 +285,38 @@ an outbound link. Opening it goes to `#/lecture/:courseId/:lessonId/:materialId`
 click-any-dot navigation, arrow-key support, a progress bar, and a **Finish** button on the last slide.
 Nothing about viewing it is graded or recorded — it is instructional content, not an assessment.
 
+## My Classes — a tab per course, past dates included
+
+The student dashboard's **My Classes** section is a tab strip, one tab per course. Each tab lists
+every session for that class, newest first — not just today's or what's upcoming — so a past date is
+always one click away. Opening a date lazily loads its lesson, materials, teacher notes, and (for a
+completed session) the gap report filed for it.
+
+## Homework — reading, videos, and practice, checked off by hand
+
+Homework is separate from a lecture or gap report: it is work assigned for outside class time, and it
+lives in its own top-level `homework` collection so it does not need a session to exist. Three types —
+`reading` (book chapters), `video` (a lecture or clip to watch), `practice` (a skill to drill: chord
+transitions, scales, a vocal warm-up, anything hands-on).
+
+**A human teacher** assigns it from the teacher dashboard's **Homework** section: type, title, details,
+an optional link, optionally tied to a lesson.
+
+**An agent** does the same over `principal.mjs`:
+
+```bash
+node principal.mjs homework-create '{
+  "type": "practice", "title": "Practice G-C-D chord transitions",
+  "details": "15 minutes daily, metronome at 60 bpm."
+}'
+```
+
+The student's **Homework** tab lists everything pending, grouped from what is already done (collapsed
+under a "Completed" disclosure), with a **Mark done** / **Mark not done** toggle the student controls
+themselves — the security rules let a student flip only `status`/`completedAt` on a homework doc,
+nothing else about the assignment. Only the owning teacher (or an admin) can create, edit or delete
+homework.
+
 ## Taking classes as the admin
 
 An admin is also a student here: **My Classes** in the sidebar opens the student dashboard, and quizzes
@@ -295,8 +329,8 @@ course.
 | hash | who | what |
 | --- | --- | --- |
 | `#/login` | everyone | email/password + Google, password reset |
-| `#/dashboard` | student, admin | today's classes, stats, upcoming timeline, progress, quizzes, activity, reflection |
-| `#/teacher` | teacher, admin | today's class, lesson plan, progress, gap report form, quiz/lecture authoring, results, history, agent access |
+| `#/dashboard` | student, admin | today's classes, a tabbed My Classes view (every past/upcoming date per course), homework, stats, upcoming timeline, progress, quizzes, activity, reflection |
+| `#/teacher` | teacher, admin | today's class, lesson plan, progress, gap report form, quiz/lecture authoring, homework assignment, results, history, agent access |
 | `#/admin` | admin | courses, teachers, all gap reports (searchable), quiz results, system health, add course/teacher, seeding |
 | `#/quiz/:quizId` | everyone signed in | timed quiz; teachers and admins see it in preview mode (attempts are not saved) |
 | `#/lecture/:courseId/:lessonId/:materialId` | everyone signed in | click-through slide deck for a `slides`-type material |

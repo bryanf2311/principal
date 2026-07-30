@@ -152,6 +152,7 @@ export const kindFor = (value) => KIND_MAP[value] || 'gray';
 export const humanize = (value) => String(value || '').replace(/_/g, ' ');
 
 export const MATERIAL_ICON = { video: '▶️', reading: '📖', quiz: '📝', slides: '📽️' };
+export const HOMEWORK_TYPE_ICON = { reading: '📖', video: '🎬', practice: '🎯' };
 
 /**
  * A single material's link/button. `slides` materials are an in-app lecture:

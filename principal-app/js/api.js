@@ -198,6 +198,34 @@ export async function createGapReport(data) {
   return ref.id;
 }
 
+/* -------------------------------------------------------------- homework */
+
+export const HOMEWORK_TYPES = ['reading', 'video', 'practice'];
+
+export async function listHomework({ courseId = null } = {}) {
+  const ref = collection(db, 'homework');
+  const rows = withId(await getDocs(courseId ? query(ref, where('courseId', '==', courseId)) : ref));
+  return rows.sort(byTimeDesc('createdAt'));
+}
+
+export async function createHomework(data) {
+  const ref = await addDoc(collection(db, 'homework'), {
+    status: 'assigned', completedAt: null, createdAt: serverTimestamp(), ...data,
+  });
+  return ref.id;
+}
+
+export async function setHomeworkStatus(homeworkId, done) {
+  await updateDoc(doc(db, 'homework', homeworkId), {
+    status: done ? 'done' : 'assigned',
+    completedAt: done ? serverTimestamp() : null,
+  });
+}
+
+export async function deleteHomework(homeworkId) {
+  await deleteDoc(doc(db, 'homework', homeworkId));
+}
+
 /* -------------------------------------------------------------- quizzes */
 
 export async function listQuizzes({ courseId = null } = {}) {

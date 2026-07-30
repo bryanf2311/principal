@@ -8,6 +8,7 @@ import {
   listCourses, listLessons, listMaterials, createMaterial, listMilestones, updateMilestone,
   listSessions, updateSession, listGapReports, createGapReport,
   listQuizzes, createQuiz, listQuizAttempts, listStudentAssessments,
+  listHomework, createHomework, deleteHomework, HOMEWORK_TYPES,
   milestoneProgress, courseHealth, warmupScore, averageWarmup, trendOf, quizAverage,
   HEALTH_LABEL,
 } from '../api.js';
@@ -15,7 +16,7 @@ import {
 import {
   esc, section, card, badge, bar, empty, healthDot, materialLink, sparkline, sheet,
   skeletonPage, fmtDate, fmtTime, fmtAgo, fmtDateTime, todayYMD, kindFor, humanize,
-  pct, toast, bindForm,
+  pct, toast, bindForm, HOMEWORK_TYPE_ICON,
 } from '../ui.js';
 
 let selectedCourseId = null;   // survives re-renders within a session
@@ -38,12 +39,13 @@ export async function render(mount, ctx) {
   const course = courses.find((c) => c.id === selectedCourseId) || courses[0];
   selectedCourseId = course.id;
 
-  const [lessons, milestones, sessions, quizzes, allReports] = await Promise.all([
+  const [lessons, milestones, sessions, quizzes, allReports, homework] = await Promise.all([
     listLessons(course.id),
     listMilestones(course.id),
     listSessions({ courseId: course.id }),
     listQuizzes({ courseId: course.id }),
     isOwner ? listGapReports({ teacherId: ctx.user.uid }) : listGapReports(),
+    listHomework({ courseId: course.id }),
   ]);
 
   const sessionIds = new Set(sessions.map((s) => s.id));
@@ -70,7 +72,7 @@ export async function render(mount, ctx) {
     .reverse();
   const filedFor = new Map(reports.map((r) => [r.sessionId, r]));
 
-  const ctxData = { course, courses, lessons, lessonById, milestones, sessions, reports, quizzes,
+  const ctxData = { course, courses, lessons, lessonById, milestones, sessions, reports, quizzes, homework,
     attemptsByQuiz, assessments, materialsByLesson, todaySessions, past, completedNoReport, filedFor, isOwner };
 
   ctx.setHeader(course.title || 'Teacher Dashboard',
@@ -86,6 +88,7 @@ export async function render(mount, ctx) {
     renderGapForm(ctxData),
     renderQuizPanels(ctxData),
     renderLecturePanel(ctxData),
+    renderHomeworkPanel(ctxData),
     renderHistory(ctxData),
     renderAgentPanel(ctx, isOwner),
   ].join('')}</div>`;
@@ -414,6 +417,57 @@ function renderLecturePanel({ lessons }) {
   }), { id: 'sec-lecture' });
 }
 
+function renderHomeworkPanel({ homework, lessons }) {
+  const rows = homework.length ? `<div class="stack divide">${homework.map((h) => `
+    <div class="row">
+      <span>${HOMEWORK_TYPE_ICON[h.type] || '📌'}</span>
+      <span class="small" style="flex:1;min-width:160px">
+        <span class="strong">${esc(h.title)}</span>
+        ${h.details ? `<br><span class="muted">${esc(h.details)}</span>` : ''}
+      </span>
+      ${badge(humanize(h.type), 'gray')}
+      ${badge(h.status === 'done' ? 'done' : 'assigned', h.status === 'done' ? 'green' : 'blue')}
+      <button class="btn btn-sm btn-danger" data-delete-homework="${esc(h.id)}">✕</button>
+    </div>`).join('')}</div>` : empty('No homework assigned for this course yet.', '📓');
+
+  const lessonOptions = ['<option value="">— none (whole course) —</option>']
+    .concat(lessons.map((l) => `<option value="${esc(l.id)}">W${esc(l.weekNumber)}S${esc(l.sessionNumber)} — ${esc(l.topic || 'lesson')}</option>`))
+    .join('');
+
+  return section('📓 Homework', `
+    ${card(rows, { title: 'Assigned' })}
+    ${card(`
+      <form id="homework-form">
+        <div data-error></div>
+        <div class="field-row">
+          <div class="field">
+            <label for="hw-type">Type</label>
+            <select id="hw-type" name="type" required>
+              ${HOMEWORK_TYPES.map((t) => `<option value="${t}">${HOMEWORK_TYPE_ICON[t]} ${humanize(t)}</option>`).join('')}
+            </select>
+          </div>
+          <div class="field">
+            <label for="hw-title">Title</label>
+            <input id="hw-title" name="title" type="text" required placeholder="Chapter 4: Scales, or Practice G-C-D transitions">
+          </div>
+          <div class="field">
+            <label for="hw-lesson">Attach to lesson</label>
+            <select id="hw-lesson" name="lessonId">${lessonOptions}</select>
+          </div>
+        </div>
+        <div class="field">
+          <label for="hw-details">Details / instructions</label>
+          <textarea id="hw-details" name="details" placeholder="Read chapters 4-5 and note two questions, or: practice the G, C and D chord transitions for 15 minutes daily."></textarea>
+        </div>
+        <div class="field">
+          <label for="hw-url">Link (optional — a video, ebook, or reference)</label>
+          <input id="hw-url" name="url" type="text" placeholder="https://...">
+        </div>
+        <button class="btn btn-primary" type="submit">Assign homework</button>
+      </form>`, { title: 'Assign homework', sub: 'Reading, a video/lecture to watch, or practice to do' })}
+  `, { id: 'sec-homework' });
+}
+
 function renderHistory({ past, lessonById, filedFor, isOwner }) {
   const body = past.length ? `<div class="table-wrap"><table class="table">
       <thead><tr><th>Date</th><th>Topic</th><th>Status</th><th>Gap report</th><th>Notes</th></tr></thead>
@@ -731,6 +785,38 @@ function wire(root, mount, ctx, data) {
       reload();
     });
   }
+
+  /* ---- homework: assign + delete ---- */
+  const homeworkForm = root.querySelector('#homework-form');
+  if (homeworkForm) {
+    bindForm(homeworkForm, async (fd) => {
+      await createHomework({
+        courseId: data.course.id,
+        teacherId: ctx.user.uid,
+        lessonId: String(fd.get('lessonId') || '') || null,
+        type: String(fd.get('type')),
+        title: String(fd.get('title') || '').trim(),
+        details: String(fd.get('details') || '').trim(),
+        url: String(fd.get('url') || '').trim(),
+      });
+      toast('Homework assigned.', 'ok');
+      reload();
+    });
+  }
+  root.addEventListener('click', async (event) => {
+    const btn = event.target.closest('[data-delete-homework]');
+    if (!btn) return;
+    btn.disabled = true;
+    try {
+      await deleteHomework(btn.dataset.deleteHomework);
+      toast('Homework removed.', 'ok');
+      reload();
+    } catch (err) {
+      console.error(err);
+      toast(`Could not remove: ${err.message}`, 'err');
+      btn.disabled = false;
+    }
+  });
 }
 
 /* ------------------------------------------------------------- viewers */

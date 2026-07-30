@@ -3,11 +3,12 @@ rules_version = '2';
 /* ============================================================
    Principal — Firestore security rules
    ------------------------------------------------------------
-   student : reads course content, sessions, gap reports, quizzes;
-             writes only its own quiz attempts and self-assessments
+   student : reads course content, sessions, gap reports, quizzes,
+             homework; writes only its own quiz attempts and
+             self-assessments, and may flip homework status/completedAt
    teacher : reads everything above; creates and writes its own
              courses, lessons, materials, milestones, sessions,
-             quizzes and gap reports
+             quizzes, gap reports and homework
    admin   : full read/write
 
    An agent teacher provisions itself (see claimedCurrentSetupKey below)
@@ -158,6 +159,17 @@ service cloud.firestore {
       allow create: if isAdmin()
         || (isTeacher() && request.resource.data.teacherId == request.auth.uid);
       allow update, delete: if isAdmin();
+    }
+
+    /* --------------------------------------------------------- homework */
+    match /homework/{homeworkId} {
+      allow read: if signedIn();
+      allow create: if isAdmin() || ownsCourse(request.resource.data.courseId);
+      allow update: if isAdmin() || ownsCourse(resource.data.courseId)
+        // The student may only flip status/completedAt to mark it done or
+        // undone — everything about what was assigned is the teacher's call.
+        || (isStudent() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'completedAt']));
+      allow delete: if isAdmin() || ownsCourse(resource.data.courseId);
     }
 
     /* --------------------------------------------------------- quizzes */
