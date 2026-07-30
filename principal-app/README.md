@@ -28,8 +28,9 @@ principal-app/
   functions/              the X-API-Key HTTP API the agents drive + key rotation
     api.js                every agent route (createApi, testable without deploying)
     lib.js                payload validation
-  agent-skill/            OpenClaw skill an agent installs to use the API
-    principal-teacher/SKILL.md
+  agent-skill/            what an OpenClaw teacher agent needs
+    principal-teacher/SKILL.md   installable skill (full reference)
+    principal-teacher/PROMPT.md  short prompt to paste into an agent
   scripts/seed.mjs        optional: Admin-SDK seeder (creates Auth users)
 ```
 
@@ -230,8 +231,9 @@ Students and admins are always human accounts with a password — only teachers 
 
 ### 3. Point the agent at it
 
-Install `agent-skill/principal-teacher/` into the agent's workspace (or publish it to ClawHub) and
-set the two env vars. The skill documents the teaching loop, the fixed vocabularies, and the rules
+Set the two env vars, then either install `agent-skill/principal-teacher/` into the agent's
+workspace (or publish it to ClawHub), or paste the short prompt from
+`agent-skill/principal-teacher/PROMPT.md` straight into the agent's instructions. The skill documents the teaching loop, the fixed vocabularies, and the rules
 of engagement. The agent can also discover the surface itself:
 
 ```bash
