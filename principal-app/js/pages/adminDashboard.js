@@ -6,10 +6,10 @@
    ============================================================ */
 
 import { createUserWithEmailAndPassword } from 'firebase/auth';
-import { createSecondaryApp, DEFAULT_NEW_ACCOUNT_PASSWORD, apiBaseUrl } from '../firebase-config.js';
+import { createSecondaryApp, DEFAULT_NEW_ACCOUNT_PASSWORD, firebaseConfig } from '../firebase-config.js';
 import {
   listUsers, listCourses, listLessons, listMilestones, listSessions, listGapReports,
-  listQuizzes, listQuizAttempts, createCourse, saveUserProfile, createUserProfile, rotateApiKey,
+  listQuizzes, listQuizAttempts, createCourse, saveUserProfile, rotateApiKey,
   generateApiKey, milestoneProgress, courseHealth, warmupScore, quizAverage, HEALTH_LABEL,
 } from '../api.js';
 import {
@@ -155,8 +155,8 @@ function renderTeachers(data) {
             : badge('missing', 'red')}</td>
           <td class="nowrap">
             <button class="btn btn-sm" data-rotate="${esc(t.id)}">${t.apiKey ? '♻︎ Rotate' : '＋ Generate'}</button>
-            ${t.apiKey ? `<button class="btn btn-sm" data-copy-key="${esc(t.id)}">📋</button>
-              <button class="btn btn-sm" data-connect="${esc(t.id)}" title="Show key and env block">🔌</button>` : ''}
+            <button class="btn btn-sm" data-connect="${esc(t.id)}" title="Show connection details">🔌 Connect</button>
+            ${t.apiKey ? `<button class="btn btn-sm" data-copy-key="${esc(t.id)}" title="Copy API key (only used with Cloud Functions)">📋</button>` : ''}
           </td>
         </tr>`;
       }).join('')}</tbody></table></div>`
@@ -259,7 +259,6 @@ function renderQuizResults(data) {
 
 function renderSystem(data) {
   const { teachers, courses, reports, attempts, sessions, users } = data;
-  const missingKeys = teachers.filter((t) => !t.apiKey);
   const unassigned = teachers.filter((t) => !courses.some((c) => c.teacherId === t.id));
   const orphanCourses = courses.filter((c) => !users.some((u) => u.id === c.teacherId));
   const lastWrite = [
@@ -271,7 +270,8 @@ function renderSystem(data) {
   const checks = [
     { ok: teachers.length > 0, label: `${teachers.length} teacher accounts`,
       detail: `${teachers.filter((t) => t.kind === 'agent').length} agents · ${teachers.filter((t) => t.kind !== 'agent').length} human` },
-    { ok: !missingKeys.length, label: 'API keys issued', detail: missingKeys.length ? `missing: ${missingKeys.map((t) => t.name || t.email).join(', ')}` : 'every teacher has a key' },
+    { ok: true, label: 'Agent teachers sign in with Auth credentials',
+      detail: `${teachers.filter((t) => t.kind === 'agent').length} agents · API keys only matter with Cloud Functions` },
     { ok: !unassigned.length, label: 'Teachers assigned to courses', detail: unassigned.length ? `unassigned: ${unassigned.map((t) => t.name || t.email).join(', ')}` : 'all assigned' },
     { ok: !orphanCourses.length, label: 'Courses point at real teachers', detail: orphanCourses.length ? `${orphanCourses.length} course(s) reference a missing user` : 'all valid' },
     { ok: data.students.length > 0, label: 'Student account exists', detail: data.students.map((s) => s.name || s.email).join(', ') || 'none found' },
@@ -365,37 +365,37 @@ function renderAddAccount({ teachers }) {
           </select></div>
         <div class="field"><label for="t-slot">Teacher slot</label>
           <select id="t-slot" name="teacherSlot">${slotOptions}</select></div>
-        <div class="field" id="t-pass-field" hidden><label for="t-pass">Initial password</label>
-          <input id="t-pass" name="password" type="text" minlength="6"
+        <div class="field" id="t-pass-field"><label for="t-pass" id="t-pass-label">Password</label>
+          <input id="t-pass" name="password" type="text" required minlength="6"
             value="${esc(DEFAULT_NEW_ACCOUNT_PASSWORD)}"></div>
       </div>
       <button class="btn btn-primary" type="submit">Create teacher</button>
       <p class="hint" id="t-hint"></p>
     </form>`, {
     title: 'New teacher',
-    sub: 'Agents connect with an API key; humans sign in with a password',
+    sub: 'Agents get credentials for the API; humans sign in to this dashboard',
   }), { id: 'sec-add-teacher' });
 }
 
-/** Shows the full key plus the env block an agent runtime needs. */
-function revealKey({ name, apiKey, slot }) {
-  const base = apiBaseUrl;
-  const env = `PRINCIPAL_API_URL=${base}\nPRINCIPAL_API_KEY=${apiKey}`;
-  const dialog = sheet(`🔑 ${esc(name)} — API key`, `
-    <p class="small muted">Paste this into the agent’s environment. It is the only credential the
-      agent needs: every route is scoped to ${esc(name)}’s${slot ? ` slot ${esc(slot)}` : ''} course.</p>
-    <div class="keybox" style="margin-top:12px">
-      <code>${esc(apiKey)}</code>
-      <button class="btn btn-sm" data-copy-value="${esc(apiKey)}">📋 Copy key</button>
-    </div>
-    <p class="small strong" style="margin:16px 0 6px">Environment for the agent</p>
-    <pre class="mono tiny" style="background:#f6f7fb;padding:12px;border-radius:9px;overflow:auto;margin:0">${esc(env)}</pre>
-    <p style="margin-top:10px"><button class="btn btn-sm" data-copy-value="${esc(env)}">📋 Copy both variables</button></p>
-    <p class="tiny muted" style="margin-top:14px">Verify the connection:</p>
-    <pre class="mono tiny" style="background:#f6f7fb;padding:12px;border-radius:9px;overflow:auto;margin:4px 0 0">curl -H "X-API-Key: ${esc(apiKey)}" ${esc(base)}/</pre>
-    <p class="tiny muted" style="margin-top:12px">You can copy this key again any time from
-      <strong>All Teachers</strong>, or rotate it there if it leaks.</p>`);
+/** Strong random password for an agent account — it is a credential, not a
+    thing anybody types. */
+function generatePassword() {
+  const bytes = new Uint8Array(11);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+}
 
+/** The environment an agent needs to reach Firestore directly. */
+function agentEnvBlock({ email, password }) {
+  return [
+    `PRINCIPAL_PROJECT_ID=${firebaseConfig.projectId}`,
+    `PRINCIPAL_WEB_API_KEY=${firebaseConfig.apiKey}`,
+    `PRINCIPAL_AGENT_EMAIL=${email}`,
+    `PRINCIPAL_AGENT_PASSWORD=${password || '<the password you set>'}`,
+  ].join('\n');
+}
+
+function copyButtons(dialog) {
   dialog.querySelectorAll('[data-copy-value]').forEach((btn) => {
     btn.addEventListener('click', async () => {
       try {
@@ -406,6 +406,39 @@ function revealKey({ name, apiKey, slot }) {
       }
     });
   });
+}
+
+/** Shown once, right after an agent teacher is created. */
+function revealAgentCredentials({ name, email, password }) {
+  const env = agentEnvBlock({ email, password });
+  const dialog = sheet(`🤖 ${esc(name)} — agent credentials`, `
+    <p class="small muted">Paste these four variables into the agent's environment
+      (<code>openclaw.json</code> env block, or an <code>.env</code> it reads). It signs in as this
+      teacher and the Firestore rules confine it to ${esc(name)}'s course.</p>
+    <pre class="mono tiny" style="background:#f6f7fb;padding:12px;border-radius:9px;overflow:auto;margin:12px 0 0">${esc(env)}</pre>
+    <p style="margin-top:10px"><button class="btn btn-sm" data-copy-value="${esc(env)}">📋 Copy all four</button></p>
+    <div class="note" style="margin-top:14px">Copy the password now — Firebase stores it hashed, so
+      it cannot be shown again. If it is lost, reset it in
+      <strong>Firebase console → Authentication → Users</strong>.</div>
+    <p class="tiny muted" style="margin-top:14px">Verify the connection from the agent's machine:</p>
+    <pre class="mono tiny" style="background:#f6f7fb;padding:12px;border-radius:9px;overflow:auto;margin:4px 0 0">node principal.mjs whoami</pre>`);
+  copyButtons(dialog);
+}
+
+/** Reopened later from All Teachers — everything except the password. */
+function showAgentEnv(teacher) {
+  const env = agentEnvBlock({ email: teacher.email, password: null });
+  const dialog = sheet(`🔌 ${esc(teacher.name || teacher.email)} — connection`, `
+    <p class="small muted">These are the values this teacher's agent needs.</p>
+    <pre class="mono tiny" style="background:#f6f7fb;padding:12px;border-radius:9px;overflow:auto;margin:12px 0 0">${esc(env)}</pre>
+    <p style="margin-top:10px"><button class="btn btn-sm" data-copy-value="${esc(env)}">📋 Copy</button></p>
+    <div class="note" style="margin-top:14px">The password is not recoverable — Firebase only stores a
+      hash. To issue a new one, use <strong>Firebase console → Authentication → Users → Reset
+      password</strong>, then update the agent's environment.</div>
+    ${teacher.apiKey ? `<p class="tiny muted" style="margin-top:14px">This account also has an API key
+      (<code>${esc(String(teacher.apiKey).slice(0, 11))}…</code>), which is only used if you deploy the
+      optional Cloud Functions API.</p>` : ''}`);
+  copyButtons(dialog);
 }
 
 /* --------------------------------------------------------------- wiring */
@@ -479,7 +512,7 @@ function wire(root, mount, ctx, data) {
     const connect = event.target.closest('[data-connect]');
     if (connect) {
       const teacher = data.userById.get(connect.dataset.connect);
-      if (teacher?.apiKey) revealKey({ name: teacher.name || teacher.email, apiKey: teacher.apiKey, slot: teacher.teacherSlot });
+      if (teacher) showAgentEnv(teacher);
       return;
     }
     if (copy) {
@@ -528,7 +561,6 @@ function wire(root, mount, ctx, data) {
   if (teacherForm) {
     const kindSelect = teacherForm.querySelector('#t-kind');
     const roleSelect = teacherForm.querySelector('#t-role');
-    const passField = teacherForm.querySelector('#t-pass-field');
     const passInput = teacherForm.querySelector('#t-pass');
     const hint = teacherForm.querySelector('#t-hint');
 
@@ -538,11 +570,16 @@ function wire(root, mount, ctx, data) {
       if (forcedHuman) kindSelect.value = 'human';
       kindSelect.disabled = forcedHuman;
       const isAgent = kindSelect.value === 'agent';
-      passField.hidden = isAgent;
-      passInput.required = !isAgent;
+      teacherForm.querySelector('#t-pass-label').textContent = isAgent
+        ? 'Generated password (the agent\u2019s credential)'
+        : 'Initial password';
+      if (isAgent && passInput.value === DEFAULT_NEW_ACCOUNT_PASSWORD) passInput.value = generatePassword();
+      if (!isAgent && passInput.value !== DEFAULT_NEW_ACCOUNT_PASSWORD && passInput.value.length === 22) {
+        passInput.value = DEFAULT_NEW_ACCOUNT_PASSWORD;
+      }
       teacherForm.querySelector('[type=submit]').textContent = isAgent ? 'Create agent teacher' : 'Create account';
       hint.innerHTML = isAgent
-        ? 'Writes a <code>users</code> profile with a fresh API key and no Firebase Auth account — an agent authenticates with the key alone. You get the key and its env block immediately.'
+        ? 'Creates the account the agent signs in as, and its <code>users</code> profile. The agent reaches Firestore directly with these credentials — the security rules confine it to its own course. You get the env block immediately; the password cannot be shown again afterwards.'
         : 'Creates the Firebase Auth user and its <code>users/{uid}</code> profile. Your own session stays signed in. Ask them to change the password after first sign-in.';
     };
     kindSelect.addEventListener('change', syncKind);
@@ -554,29 +591,32 @@ function wire(root, mount, ctx, data) {
       const isAgent = role === 'teacher' && String(fd.get('kind')) === 'agent';
       const email = String(fd.get('email')).trim();
       const name = String(fd.get('name')).trim();
+      const password = String(fd.get('password'));
       const slot = role === 'teacher' ? Number(fd.get('teacherSlot')) : null;
-      const apiKey = role === 'teacher' ? generateApiKey() : '';
+
+      /* Agents and humans both need an Auth account: the agent signs in with it
+         to reach Firestore. The secondary app keeps the admin's session intact. */
+      const secondary = createSecondaryApp();
+      try {
+        const cred = await createUserWithEmailAndPassword(secondary.auth, email, password);
+        await saveUserProfile(cred.user.uid, {
+          name,
+          email,
+          role,
+          teacherSlot: slot,
+          apiKey: role === 'teacher' ? generateApiKey() : '',
+          kind: isAgent ? 'agent' : 'human',
+          createdAt: new Date(),
+        });
+      } finally {
+        secondary.dispose();
+      }
 
       if (isAgent) {
-        /* No Auth account: the key is the credential. */
-        await createUserProfile({
-          name, email, role, teacherSlot: slot, apiKey, kind: 'agent', createdAt: new Date(),
-        });
         toast(`${name} connected as an agent teacher.`, 'ok');
-        revealKey({ name, apiKey, slot });
+        revealAgentCredentials({ name, email, password });
       } else {
-        const password = String(fd.get('password'));
-        const secondary = createSecondaryApp();
-        try {
-          const cred = await createUserWithEmailAndPassword(secondary.auth, email, password);
-          await saveUserProfile(cred.user.uid, {
-            name, email, role, teacherSlot: slot, apiKey, kind: 'human', createdAt: new Date(),
-          });
-        } finally {
-          secondary.dispose();
-        }
         toast(`${name} added as ${role}.`, 'ok');
-        if (apiKey) revealKey({ name, apiKey, slot });
       }
       reload();
     });
