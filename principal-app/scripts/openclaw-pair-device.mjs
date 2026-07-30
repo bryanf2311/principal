@@ -71,113 +71,160 @@ function buildDeviceAuthPayloadV2({ deviceId, clientId, clientMode, role, scopes
   return ['v2', deviceId, clientId, clientMode, role, scopes.join(','), String(signedAtMs), token ?? '', nonce].join('|');
 }
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** One connect attempt. Resolves to {outcome: 'connected', helloOk} |
+ * {outcome: 'not-paired', requestId} | {outcome: 'rejected', error} |
+ * {outcome: 'no-response'}. Never throws for ordinary protocol outcomes. */
+function attemptConnect(identity, { verbose }) {
+  return new Promise((resolve) => {
+    const log = (...args) => { if (verbose) console.log(...args); };
+    const ws = new WebSocket(GATEWAY_URL, [], { headers: { Origin: ORIGIN } });
+    let settled = false;
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      try { ws.close(); } catch { /* already closed */ }
+      resolve(result);
+    };
+
+    const timeout = setTimeout(() => finish({ outcome: 'no-response' }), 10_000);
+
+    ws.addEventListener('open', () => log('socket open, waiting for connect.challenge...'));
+
+    ws.addEventListener('message', async (event) => {
+      let msg;
+      try { msg = JSON.parse(event.data); } catch { return; }
+      log('recv:', JSON.stringify(msg).slice(0, 300));
+
+      if (msg.type === 'event' && msg.event === 'connect.challenge') {
+        const nonce = msg.payload.nonce;
+        const signedAtMs = Date.now();
+        const role = 'operator';
+        const scopes = ['operator.talk'];
+        const payload = buildDeviceAuthPayloadV2({
+          deviceId: identity.deviceId,
+          clientId: 'webchat-ui',
+          clientMode: 'webchat',
+          role,
+          scopes,
+          signedAtMs,
+          token: GATEWAY_TOKEN || null,
+          nonce,
+        });
+        const sigBytes = await ed.signAsync(new TextEncoder().encode(payload), b64urlDecode(identity.privateKey));
+        const signature = b64url(sigBytes);
+
+        const connectReq = {
+          type: 'req',
+          id: crypto.randomUUID(),
+          method: 'connect',
+          params: {
+            minProtocol: 4,
+            maxProtocol: 4,
+            client: { id: 'webchat-ui', version: '1.0.0', platform: 'web', mode: 'webchat' },
+            role,
+            scopes,
+            caps: [],
+            commands: [],
+            permissions: {},
+            ...(GATEWAY_TOKEN ? { auth: { token: GATEWAY_TOKEN } } : {}),
+            device: {
+              id: identity.deviceId,
+              publicKey: identity.publicKey,
+              signature,
+              signedAt: signedAtMs,
+              nonce,
+            },
+          },
+        };
+        log('sending connect request...');
+        ws.send(JSON.stringify(connectReq));
+        return;
+      }
+
+      if (msg.type === 'res' && msg.payload?.type === 'hello-ok') {
+        finish({ outcome: 'connected', helloOk: msg.payload });
+        return;
+      }
+
+      if (msg.type === 'res' && msg.ok === false) {
+        const details = msg.error?.details;
+        if (details?.code === 'PAIRING_REQUIRED') {
+          finish({ outcome: 'not-paired', requestId: details.requestId });
+        } else {
+          finish({ outcome: 'rejected', error: msg.error });
+        }
+      }
+    });
+
+    ws.addEventListener('close', (event) => finish({ outcome: 'no-response', closeCode: event.code, closeReason: event.reason }));
+    ws.addEventListener('error', (event) => log('socket error:', event.message || event));
+  });
+}
+
 async function main() {
   const identity = await loadOrCreateIdentity();
   console.log('Device identity (save all three — they go in openclaw-config.js):');
   console.log('  deviceId:  ', identity.deviceId);
   console.log('  publicKey: ', identity.publicKey);
   console.log('  privateKey:', identity.privateKey);
+
   console.log(`\nConnecting to ${GATEWAY_URL} ...`);
+  const first = await attemptConnect(identity, { verbose: true });
 
-  const ws = new WebSocket(GATEWAY_URL, [], { headers: { Origin: ORIGIN } });
-  let settled = false;
-
-  const timeout = setTimeout(() => {
-    if (settled) return;
-    settled = true;
-    console.log('\nPENDING (or unreachable) — no hello-ok within 10s.');
-    console.log('If the socket did open, this device is probably now a pending');
-    console.log('pairing request. Run: openclaw-native devices list');
-    ws.close();
+  if (first.outcome === 'connected') {
+    printConnected(first.helloOk);
+    process.exit(0);
+  }
+  if (first.outcome === 'rejected') {
+    console.log('\nREJECTED:', JSON.stringify(first.error));
+    process.exit(1);
+  }
+  if (first.outcome === 'no-response') {
+    console.log('\nNo response from the Gateway (closeCode:', first.closeCode, first.closeReason, '). Check GATEWAY_URL/connectivity.');
     process.exit(2);
-  }, 10_000);
+  }
 
-  ws.addEventListener('open', () => console.log('socket open, waiting for connect.challenge...'));
+  // not-paired: keep retrying so there's a real window to run `devices
+  // approve` in — the pending request appears to be tied to a live
+  // connection attempt (or has a very short TTL), so a single one-shot
+  // attempt races the approval instead of waiting for it.
+  console.log(`\nPENDING — requestId: ${first.requestId}`);
+  console.log('Approve it now, in another terminal on this VPS:');
+  console.log(`  openclaw-native devices approve ${first.requestId}`);
+  console.log('Retrying the connect every 4s for up to 3 minutes so you have time...\n');
 
-  ws.addEventListener('message', async (event) => {
-    let msg;
-    try { msg = JSON.parse(event.data); } catch { return; }
-    console.log('recv:', JSON.stringify(msg).slice(0, 300));
-
-    if (msg.type === 'event' && msg.event === 'connect.challenge') {
-      const nonce = msg.payload.nonce;
-      const signedAtMs = Date.now();
-      const role = 'operator';
-      const scopes = ['operator.talk'];
-      const payload = buildDeviceAuthPayloadV2({
-        deviceId: identity.deviceId,
-        clientId: 'webchat-ui',
-        clientMode: 'webchat',
-        role,
-        scopes,
-        signedAtMs,
-        token: GATEWAY_TOKEN || null,
-        nonce,
-      });
-      const sigBytes = await ed.signAsync(new TextEncoder().encode(payload), b64urlDecode(identity.privateKey));
-      const signature = b64url(sigBytes);
-
-      const connectReq = {
-        type: 'req',
-        id: crypto.randomUUID(),
-        method: 'connect',
-        params: {
-          minProtocol: 4,
-          maxProtocol: 4,
-          client: { id: 'webchat-ui', version: '1.0.0', platform: 'web', mode: 'webchat' },
-          role,
-          scopes,
-          caps: [],
-          commands: [],
-          permissions: {},
-          ...(GATEWAY_TOKEN ? { auth: { token: GATEWAY_TOKEN } } : {}),
-          device: {
-            id: identity.deviceId,
-            publicKey: identity.publicKey,
-            signature,
-            signedAt: signedAtMs,
-            nonce,
-          },
-        },
-      };
-      console.log('\nsending connect request...');
-      ws.send(JSON.stringify(connectReq));
-      return;
-    }
-
-    if (msg.type === 'res' && msg.payload?.type === 'hello-ok') {
-      settled = true;
-      clearTimeout(timeout);
-      console.log('\nCONNECTED. hello-ok.auth:', JSON.stringify(msg.payload.auth, null, 2));
-      if (msg.payload.auth?.deviceToken) {
-        console.log('\ndeviceToken (put this in openclaw-config.js too):');
-        console.log(' ', msg.payload.auth.deviceToken);
-      }
-      ws.close();
+  const deadline = Date.now() + 3 * 60_000;
+  while (Date.now() < deadline) {
+    await sleep(4_000);
+    const attempt = await attemptConnect(identity, { verbose: false });
+    if (attempt.outcome === 'connected') {
+      console.log('retry succeeded.');
+      printConnected(attempt.helloOk);
       process.exit(0);
     }
-
-    if (msg.type === 'res' && msg.ok === false) {
-      settled = true;
-      clearTimeout(timeout);
-      console.log('\nREJECTED:', JSON.stringify(msg.error ?? msg.payload));
-      ws.close();
+    if (attempt.outcome === 'rejected') {
+      console.log('\nREJECTED on retry:', JSON.stringify(attempt.error));
       process.exit(1);
     }
-  });
-
-  ws.addEventListener('close', (event) => {
-    if (!settled) {
-      settled = true;
-      clearTimeout(timeout);
-      console.log(`\nsocket closed before hello-ok: code=${event.code} reason=${event.reason}`);
-      process.exit(2);
+    if (attempt.outcome === 'not-paired') {
+      console.log(`still pending (requestId now: ${attempt.requestId}) — waiting...`);
+    } else {
+      console.log('no response on retry, still waiting...');
     }
-  });
+  }
+  console.log('\nGave up after 3 minutes without approval. Run this script again once approved.');
+  process.exit(2);
+}
 
-  ws.addEventListener('error', (event) => {
-    console.log('socket error:', event.message || event);
-  });
+function printConnected(helloOk) {
+  console.log('\nCONNECTED. hello-ok.auth:', JSON.stringify(helloOk.auth, null, 2));
+  if (helloOk.auth?.deviceToken) {
+    console.log('\ndeviceToken (put this in openclaw-config.js too):');
+    console.log(' ', helloOk.auth.deviceToken);
+  }
 }
 
 main();
