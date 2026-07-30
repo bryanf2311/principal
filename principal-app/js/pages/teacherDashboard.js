@@ -1,18 +1,17 @@
 /* ============================================================
    #/teacher — everything one teacher needs for their slot.
    Today's class · lesson plan · student progress · gap report
-   filing · quiz authoring & results · session history · API key
+   filing · quiz authoring & results · session history · agents
    ============================================================ */
 
 import {
   listCourses, listLessons, listMaterials, listMilestones, updateMilestone,
   listSessions, updateSession, listGapReports, createGapReport,
   listQuizzes, createQuiz, listQuizAttempts, listStudentAssessments,
-  getUserProfile, rotateApiKey,
   milestoneProgress, courseHealth, warmupScore, averageWarmup, trendOf, quizAverage,
   HEALTH_LABEL,
 } from '../api.js';
-import { apiBaseUrl } from '../firebase-config.js';
+
 import {
   esc, section, card, badge, bar, empty, healthDot, materialLink, sparkline, sheet,
   skeletonPage, fmtDate, fmtTime, fmtAgo, fmtDateTime, todayYMD, kindFor, humanize,
@@ -87,7 +86,7 @@ export async function render(mount, ctx) {
     renderGapForm(ctxData),
     renderQuizPanels(ctxData),
     renderHistory(ctxData),
-    renderApiKey(ctx, isOwner),
+    renderAgentPanel(ctx, isOwner),
   ].join('')}</div>`;
 
   wire(mount.querySelector('#teacher-root'), mount, ctx, ctxData);
@@ -407,40 +406,25 @@ function renderHistory({ past, lessonById, filedFor, isOwner }) {
   return section('🕘 Session History', card(body), { id: 'sec-history' });
 }
 
-function renderApiKey(ctx, isOwner) {
-  if (!isOwner) {
-    return section('🔑 API Key', card(
-      `<p class="small muted">API keys belong to teacher accounts. Manage every teacher’s key from
-        <a href="#/admin">Admin → All Teachers</a>.</p>`,
-    ), { id: 'sec-api' });
-  }
-  const key = ctx.profile.apiKey || '';
-  const base = apiBaseUrl;
-  return section('🔑 API Key', card(`
-    <p class="small muted">Use this key with the <code>X-API-Key</code> header to read your course data or file
-      gap reports from scripts. Treat it like a password — rotating it immediately invalidates the old one.</p>
-    <div class="keybox" style="margin-top:12px">
-      <code id="api-key-text">${key ? esc(key) : 'No key yet'}</code>
-      <button class="btn btn-sm" id="copy-key" ${key ? '' : 'disabled'}>📋 Copy</button>
-      <button class="btn btn-sm btn-danger" id="rotate-key">${key ? '♻︎ Rotate' : '＋ Generate'}</button>
-    </div>
+function renderAgentPanel(ctx, isOwner) {
+  return section('🤖 Agent access', card(`
+    <p class="small muted">This course can also be taught by an AI agent. An agent signs in with its
+      own teacher account and writes here directly — the same lessons, sessions, gap reports,
+      milestones and quizzes you see on this page.</p>
+    <p class="small muted" style="margin-top:10px">${isOwner
+      ? 'Your own account is a teacher account, so an agent configured with your credentials would act as you. Ask your admin for a separate agent account instead.'
+      : 'Create one from <a href="#/admin">Admin → Add Teacher → 🤖 AI agent</a>, then hand the agent its four environment variables.'}</p>
     <details class="lesson" style="margin-top:14px">
-      <summary>Example requests</summary>
+      <summary>What the agent runs</summary>
       <div class="lesson-body">
-        <pre class="mono tiny" style="overflow:auto;margin:0">curl -H "X-API-Key: ${key ? esc(key) : 'YOUR_KEY'}" \\
-  ${esc(base)}/course
-
-curl -X POST ${esc(base)}/gap-reports \\
-  -H "X-API-Key: ${key ? esc(key) : 'YOUR_KEY'}" \\
-  -H "Content-Type: application/json" \\
-  -d '{"sessionId":"SESSION_ID","applicationTask":"Solve 3x+7=22",
-       "applicationResult":"partially_correct",
-       "warmupResults":[{"question":"2x=10","result":"correct"}],
-       "identifiedGaps":[{"description":"sign errors","severity":"major"}],
-       "remediationPlan":"Sign-change drills"}'</pre>
-        <p class="tiny muted" style="margin-top:8px">Requires the Cloud Functions in <code>functions/</code> to be deployed.</p>
+        <pre class="mono tiny" style="overflow:auto;margin:0">node principal.mjs today
+node principal.mjs gap-report '{"sessionId":"…","applicationTask":"…",
+  "applicationResult":"partially_correct","identifiedGaps":[],
+  "remediationPlan":"…","markSessionCompleted":true}'</pre>
+        <p class="tiny muted" style="margin-top:8px">The tool and its instructions live in
+          <code>agent-skill/principal-teacher/</code>. No paid Firebase plan is involved.</p>
       </div>
-    </details>`, { title: 'Your API key' }), { id: 'sec-api' });
+    </details>`), { id: 'sec-api' });
 }
 
 /* --------------------------------------------------------------- wiring */
@@ -665,34 +649,6 @@ function wire(root, mount, ctx, data) {
     });
   }
 
-  /* ---- API key panel ---- */
-  root.querySelector('#copy-key')?.addEventListener('click', async () => {
-    try {
-      await navigator.clipboard.writeText(ctx.profile.apiKey || '');
-      toast('API key copied to clipboard.', 'ok');
-    } catch {
-      toast('Copy failed — select the key and copy manually.', 'err');
-    }
-  });
-
-  root.querySelector('#rotate-key')?.addEventListener('click', async (event) => {
-    const btn = event.currentTarget;
-    if (ctx.profile.apiKey && !confirm('Rotate this key? Anything using the old key stops working immediately.')) return;
-    btn.disabled = true;
-    try {
-      const key = await rotateApiKey(ctx.user.uid);
-      ctx.profile.apiKey = key;                       // keep in-memory profile fresh
-      const fresh = await getUserProfile(ctx.user.uid);
-      if (fresh) Object.assign(ctx.profile, fresh);
-      toast('New API key generated.', 'ok');
-      reload();
-    } catch (err) {
-      console.error(err);
-      toast(`Could not rotate key: ${err.message}`, 'err');
-    } finally {
-      btn.disabled = false;
-    }
-  });
 }
 
 /* ------------------------------------------------------------- viewers */

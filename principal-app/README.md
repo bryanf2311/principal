@@ -1,9 +1,10 @@
 # 🎓 Principal — Learning Dashboard
 
 A personal learning platform for one **human student** (Bryan) and up to six **AI teachers** —
-OpenClaw agents that read their course and write back their work over an API-key HTTP API.
+OpenClaw agents that read their course and write back their work straight to Firestore.
 Human teachers still work; they just sign in to the dashboard instead.
-Static frontend on Netlify, Firebase (Auth + Firestore, optional Functions) as the backend.
+Static frontend on Netlify, Firebase Auth + Firestore as the backend. **Everything runs on the free
+Spark plan** — there are no Cloud Functions and nothing that requires billing.
 Everything — users, courses, lessons, materials, quizzes — lives in Firestore. Nothing is hardcoded:
 add a sixth teacher and a course document and the UI picks them up on the next load.
 
@@ -29,8 +30,6 @@ principal-app/
     principal-teacher/principal.mjs  the agent's tool (zero deps, Node 18+)
     principal-teacher/SKILL.md       installable skill (full reference)
     principal-teacher/PROMPT.md      short prompt to paste into an agent
-  functions/              OPTIONAL X-API-Key HTTP API (needs the Blaze plan)
-    api.js  lib.js        same operations over HTTP, if you ever want them
   scripts/seed.mjs        optional: Admin-SDK seeder (creates Auth users)
 ```
 
@@ -143,42 +142,22 @@ tourmaline-bavarois-a0a452.netlify.app
 Without it, Firebase rejects sign-in on the live site with `auth/unauthorized-domain` (the app
 surfaces that as a readable message on the login form).
 
-### Two different URLs
-
-They are easy to mix up:
-
-| URL | who uses it |
-| --- | --- |
-| `https://tourmaline-bavarois-a0a452.netlify.app` | **people** — Bryan and the admin, in a browser |
-| `https://us-central1-principal-990be.cloudfunctions.net/api` | **agents** — the HTTP API, `X-API-Key` |
-
-The agents never touch the Netlify URL; the dashboard never needs the Functions URL typed in by
-hand. If you would rather serve both from one hostname, add this to `netlify.toml` **above** the
-catch-all redirect and point the agents at `https://tourmaline-bavarois-a0a452.netlify.app/api`:
-
-```toml
-[[redirects]]
-  from = "/api/*"
-  to = "https://us-central1-principal-990be.cloudfunctions.net/api/:splat"
-  status = 200
-  force = true
-```
-
-Order matters — Netlify applies the first matching rule, and the existing `/*` rule would
-otherwise swallow `/api`.
+There is only one URL in this setup: the Netlify site above, for people. The agents do not use a URL
+you have to configure — they talk to Firebase's own endpoints using the four environment variables
+below.
 
 ## 5. Teachers are AI agents
 
 The student is a person who signs in to the dashboard. Each teacher is an OpenClaw agent that never
 opens a browser — it **signs in as its own Firebase Auth user and writes straight to Firestore**, with
-the security rules confining it to its own course. No server sits in between, so **no Cloud Functions
-and no Blaze plan are required**.
+the security rules confining it to its own course. Nothing sits in between, so there is **nothing to
+deploy and no paid plan**.
 
 ### 1. Create each agent teacher
 
-**Admin → Add Teacher → Teacher type: 🤖 AI agent.** That creates the Auth account the agent signs in
-as (with a generated password) plus its `users` profile marked `kind: "agent"`, and then shows the
-four variables to hand over:
+**Admin → Add Teacher or Student → Role: Teacher → Teacher type: 🤖 AI agent.** That creates the Auth
+account the agent signs in as (with a generated password) plus its profile, then shows the four
+variables to hand over:
 
 ```
 PRINCIPAL_PROJECT_ID=principal-990be
@@ -187,13 +166,17 @@ PRINCIPAL_AGENT_EMAIL=algebra-agent@agents.local
 PRINCIPAL_AGENT_PASSWORD=…
 ```
 
-**Copy the password then** — Firebase stores only a hash, so it cannot be shown again. Reopen the
-other three any time with **🔌 Connect** in All Teachers; to replace a lost password use
-**Firebase console → Authentication → Users → Reset password**. Assign the agent a course with
-**Add Course**.
+**Copy the password then** — Firebase stores only a hash. Reopen the other three any time with
+**🔌 Connect** in All Teachers; replace a lost password in **Firebase console → Authentication →
+Users → Reset password**.
 
-Students and admins are always human accounts. Only teachers can be agents, and **a student never
-gets teacher credentials** — the rules give each role exactly its own surface.
+**If the agent already signed itself up**, it has a login with no profile, which is why every write
+comes back `PERMISSION_DENIED`. Open **"The account already exists"** in the same form, paste the UID
+the agent reports, and it attaches a teacher profile to that account — no new login, and the agent
+keeps the password it already has.
+
+Finally, make sure the agent owns a course: **All Courses** has a teacher dropdown on every row, so you
+can reassign a course that was created against the wrong account.
 
 ### 2. Point the agent at it
 
@@ -235,28 +218,25 @@ reports from dashboard-filed ones.
 The security rules, not the tool. An agent's account can read the course content it teaches, write its
 own course's lessons, materials, milestones and sessions, file gap reports under its own teacher id,
 and create quizzes for its own course. Anything else — another teacher's course, promoting itself,
-writing the student's quiz answers — is refused by Firestore. That is covered by 79 rules assertions
-and 25 end-to-end CLI assertions against the emulator.
+writing the student's quiz answers, **or creating its own profile** — is refused by Firestore. Covered
+by 79 rules assertions and 25 end-to-end CLI assertions against the emulator.
 
-### Optional: the HTTP API
-
-`functions/` holds the same operations as an `X-API-Key` HTTP API, for agents that would rather make
-plain HTTP calls than shell out to Node. It needs the **Blaze (pay-as-you-go)** plan, because Cloud
-Functions requires `cloudbuild.googleapis.com`:
-
-```bash
-cd principal-app/functions && npm install
-firebase deploy --only functions
-```
-
-Nothing in the agent setup above depends on it.
+Note that anyone can *create* a Firebase Auth login (that is how email/password sign-up works), but a
+login with no `users/{uid}` profile can do nothing at all. Provisioning is what grants access.
 
 ### What the dashboards are for
 
-The human UI is the observation layer. Bryan sees today's classes, materials, progress and quizzes;
-the admin sees course health, every gap report the agents filed, quiz results and the credential
-management above. The teacher dashboard still works for a human teacher, and admins can open it to see
-what an agent has been doing.
+The human UI is the observation layer. Bryan sees today's classes, materials, progress and quizzes; the
+admin sees course health, every gap report the agents filed, quiz results and the credential management
+above. The teacher dashboard still works for a human teacher, and admins can open it to see what an
+agent has been doing.
+
+## Taking classes as the admin
+
+An admin is also a student here: **My Classes** in the sidebar opens the student dashboard, and quizzes
+taken from an admin account are graded and recorded exactly like a student's (teachers still get a
+read-only preview). Self-assessments work the same way. So one account can run the system and take the
+course.
 
 ## Routes
 
@@ -286,8 +266,11 @@ what an agent has been doing.
 * This is built for one student, so students may read all courses, sessions, gap reports and
   quizzes. Add a `studentId` filter to the rules (courses already carry the field after seeding)
   if you ever onboard a second student.
-* Admin "Add Teacher" signs the new account up on a secondary Firebase app instance, so your own
-  session is never replaced. Change the initial password after first sign-in.
+* Admin "Add Teacher or Student" signs the new account up on a secondary Firebase app instance, so
+  your own session is never replaced. Change the initial password after first sign-in.
+* No Cloud Functions, no Blaze plan, no server: the dashboard and the agents both talk to Firestore
+  directly, and the rules are the only thing standing between a role and someone else's data. That
+  makes `firestore.rules` the most important file in the repo — deploy it before anything else.
 * Nobody can create or promote their own profile: `users` `create` is admin-only apart from the
   bootstrap allowlist, and self-`update` cannot change `role` or `teacherSlot`. This matters most
   when Google sign-in is enabled, since anyone with a Google account can reach the sign-in step —

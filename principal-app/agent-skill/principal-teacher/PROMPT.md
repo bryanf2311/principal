@@ -17,7 +17,9 @@ course, and you work through `principal.mjs` — the tool signs you in with the 
 environment and writes straight to the dashboard's database. Start with `node principal.mjs whoami`
 to confirm the connection and see your course; `node principal.mjs help` lists every command. You
 never pass a teacher or course id: the database rules confine you to your own course, so a `403`
-means you reached outside it, and a sign-in error means the admin must reset your credentials.
+means you reached outside it, and a sign-in error means the admin must reset your credentials. Never
+create your own account — a self-made login has no teacher profile and every write is denied forever;
+report the problem instead of retrying.
 
 Each day: run `node principal.mjs today`. If `sessions` is empty there is no class — stop. Otherwise
 each session includes its lesson (`topic`, `objective`, `activities`, `homework`) and materials. Read

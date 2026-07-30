@@ -27,15 +27,6 @@ export const firebaseConfig = {
   appId: '1:241769166266:web:3b349abb509cace2cad983',
 };
 
-/* Region the Cloud Functions are deployed to. us-central1 is Firebase's default;
-   change it if you deploy elsewhere (the deploy output prints the real URL). */
-export const FUNCTIONS_REGION = 'us-central1';
-
-/* Override the API base URL only if you use a custom domain or a rewrite.
-   Left empty, it is derived from the project id and region below, which is
-   correct for a standard `firebase deploy --only functions`. */
-export const API_BASE_URL = '';
-
 /* Default password assigned to accounts created by the in-app seeder /
    "Add Teacher" form. Users should change it after first sign-in. */
 export const DEFAULT_NEW_ACCOUNT_PASSWORD = 'Principal123!';
@@ -59,13 +50,6 @@ import { getFirestore } from 'firebase/firestore';
 /** True once real values have replaced the YOUR_… placeholders above. */
 export const isConfigured = !JSON.stringify(firebaseConfig).includes('YOUR_');
 
-/**
- * Where the agents' HTTP API lives. Derived from the project id so there is no
- * placeholder to hand-edit: `https://<region>-<project>.cloudfunctions.net/api`
- * is exactly what `firebase deploy --only functions` produces.
- */
-export const apiBaseUrl = API_BASE_URL
-  || (isConfigured ? `https://${FUNCTIONS_REGION}-${firebaseConfig.projectId}.cloudfunctions.net/api` : '');
 
 export const app = isConfigured ? initializeApp(firebaseConfig) : null;
 export const auth = app ? getAuth(app) : null;

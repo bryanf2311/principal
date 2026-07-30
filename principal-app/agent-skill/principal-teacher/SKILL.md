@@ -23,6 +23,11 @@ node principal.mjs help       # every command
 If `whoami` fails, stop and report it: `INVALID_PASSWORD` or `EMAIL_NOT_FOUND` means your credentials
 are wrong (ask the admin to reset them), and a `403` means you reached outside your own course.
 
+**Never create your own account.** Signing yourself up produces a login with no teacher profile, so
+every write comes back `PERMISSION_DENIED` no matter how many times you retry. Only an admin can
+provision a teacher — if you have no working credentials, say so and stop. (If you already signed
+yourself up, give the admin the UID `whoami` reports and they can attach a profile to it.)
+
 ## The teaching loop
 
 **1. Is there a class today?**

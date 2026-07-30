@@ -58,7 +58,7 @@ const NAV = {
     { icon: '🩺', label: 'File Gap Report', href: '#/teacher', scroll: 'sec-gap' },
     { icon: '📝', label: 'Quizzes', href: '#/teacher', scroll: 'sec-quiz' },
     { icon: '🕘', label: 'Session History', href: '#/teacher', scroll: 'sec-history' },
-    { icon: '🔑', label: 'API Key', href: '#/teacher', scroll: 'sec-api' },
+    { icon: '🤖', label: 'Agent access', href: '#/teacher', scroll: 'sec-api' },
   ],
   admin: [
     { icon: '🏠', label: 'Overview', href: '#/admin' },
@@ -68,8 +68,8 @@ const NAV = {
     { icon: '📝', label: 'Quiz Results', href: '#/admin', scroll: 'sec-quizzes' },
     { icon: '💚', label: 'System Health', href: '#/admin', scroll: 'sec-system' },
     { icon: '➕', label: 'Add Course', href: '#/admin', scroll: 'sec-add-course' },
-    { icon: '➕', label: 'Add Teacher', href: '#/admin', scroll: 'sec-add-teacher' },
-    { icon: '🎓', label: 'Student View', href: '#/dashboard' },
+    { icon: '➕', label: 'Add Account', href: '#/admin', scroll: 'sec-add-teacher' },
+    { icon: '🎓', label: 'My Classes', href: '#/dashboard' },
     { icon: '👩‍🏫', label: 'Teacher View', href: '#/teacher' },
   ],
 };

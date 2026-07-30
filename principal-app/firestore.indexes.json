@@ -1,30 +1,5 @@
 {
-  "comment": "The web app queries a single field at a time and sorts client-side, so no composite index is required for it to run. These entries only help the Cloud Functions API, which orders results server-side.",
-  "indexes": [
-    {
-      "collectionGroup": "sessions",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "courseId", "order": "ASCENDING" },
-        { "fieldPath": "scheduledDate", "order": "ASCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "gapReports",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "teacherId", "order": "ASCENDING" },
-        { "fieldPath": "filedAt", "order": "DESCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "quizAttempts",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "userId", "order": "ASCENDING" },
-        { "fieldPath": "completedAt", "order": "DESCENDING" }
-      ]
-    }
-  ],
+  "comment": "The app and the agent CLI query one field at a time and sort in memory, so no composite index is required. Kept for future use.",
+  "indexes": [],
   "fieldOverrides": []
 }

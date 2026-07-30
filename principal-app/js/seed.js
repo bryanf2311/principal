@@ -15,7 +15,7 @@ import {
   listUsers, listCourses, listQuizzes, listSessions, listGapReports, listQuizAttempts,
   saveUserProfile, createCourse, createLesson, createMaterial, createMilestone,
   createSession, createGapReport, createQuiz, createQuizAttempt, createStudentAssessment,
-  generateApiKey, gradeAttempt,
+  gradeAttempt,
 } from './api.js';
 import {
   SEED_USERS, SEED_COURSES, SEED_ATTEMPT, SEED_ASSESSMENTS, buildCourse,
@@ -72,7 +72,7 @@ export async function seedAll({ log = () => {}, password = DEFAULT_NEW_ACCOUNT_P
         email: seedUser.email,
         role: seedUser.role,
         teacherSlot: seedUser.teacherSlot,
-        apiKey: seedUser.role === 'teacher' ? generateApiKey() : '',
+        kind: seedUser.role === 'teacher' ? 'agent' : 'human',
         createdAt: new Date(),
       });
       uidByKey[seedUser.key] = uid;

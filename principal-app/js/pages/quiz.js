@@ -23,8 +23,10 @@ export async function render(mount, ctx) {
 
   const questions = Array.isArray(quiz.questions) ? quiz.questions : [];
   const course = quiz.courseId ? await getCourse(quiz.courseId).catch(() => null) : null;
-  const isStudent = ctx.profile.role === 'student';
-  const previous = isStudent
+  /* Admins take classes too, so their attempts are recorded like a student's.
+     Teachers only ever preview. */
+  const isTaker = ctx.profile.role === 'student' || ctx.profile.role === 'admin';
+  const previous = isTaker
     ? (await listQuizAttempts({ userId: ctx.user.uid })).filter((a) => a.quizId === quizId)
     : [];
 
@@ -51,9 +53,9 @@ export async function render(mount, ctx) {
   function shell(inner) {
     mount.innerHTML = `<div class="quiz-wrap">
       <div class="quiz-top">
-        <a class="btn btn-sm" href="${isStudent ? '#/dashboard' : '#/teacher'}">← Exit</a>
+        <a class="btn btn-sm" href="${isTaker ? '#/dashboard' : '#/teacher'}">← Exit</a>
         <span class="spacer" style="flex:1"></span>
-        ${!isStudent ? badge('preview — attempt not saved', 'blue') : ''}
+        ${!isTaker ? badge('preview — attempt not saved', 'blue') : ''}
         <span id="timer-slot"></span>
       </div>
       ${inner}
@@ -154,7 +156,7 @@ export async function render(mount, ctx) {
       }).join(''), { title: 'Question review' })}
 
       <p class="row" style="margin-top:16px">
-        <a class="btn btn-primary" href="${isStudent ? '#/dashboard' : '#/teacher'}">Back to dashboard</a>
+        <a class="btn btn-primary" href="${isTaker ? '#/dashboard' : '#/teacher'}">Back to dashboard</a>
         <button class="btn" id="retake-btn">Retake quiz</button>
       </p>`);
 
@@ -183,7 +185,7 @@ export async function render(mount, ctx) {
     const timeSpentSeconds = Math.round((Date.now() - run.startedAt) / 1000);
 
     let saved = false;
-    if (isStudent) {
+    if (isTaker) {
       try {
         await createQuizAttempt({
           quizId,

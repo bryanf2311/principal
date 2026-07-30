@@ -31,33 +31,11 @@ export async function saveUserProfile(uid, data) {
   await setDoc(doc(db, 'users', uid), data, { merge: true });
 }
 
-/**
- * Creates a users document with a generated id, for accounts that never sign in
- * — an AI teacher only needs an API key, not Firebase Auth credentials.
- */
-export async function createUserProfile(data) {
-  const ref = await addDoc(collection(db, 'users'), { createdAt: serverTimestamp(), ...data });
-  return ref.id;
-}
-
 export async function listUsers(role = null) {
   const ref = collection(db, 'users');
   const snap = await getDocs(role ? query(ref, where('role', '==', role)) : ref);
   return withId(snap).sort((a, b) => (a.teacherSlot ?? 99) - (b.teacherSlot ?? 99)
     || String(a.name || '').localeCompare(String(b.name || '')));
-}
-
-/** 40 hex chars of browser CSPRNG, prefixed so keys are recognisable. */
-export function generateApiKey() {
-  const bytes = new Uint8Array(20);
-  crypto.getRandomValues(bytes);
-  return `pk_${Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')}`;
-}
-
-export async function rotateApiKey(uid) {
-  const apiKey = generateApiKey();
-  await updateDoc(doc(db, 'users', uid), { apiKey, apiKeyRotatedAt: serverTimestamp() });
-  return apiKey;
 }
 
 export async function touchLastActive(uid) {
