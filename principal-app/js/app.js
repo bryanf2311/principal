@@ -43,42 +43,74 @@ const ROUTES = [
   { pattern: /^\/lecture\/([^/]+)\/([^/]+)\/([^/]+)$/, page: lecturePage, roles: ['student', 'teacher', 'admin'], title: 'Lecture', chrome: true },
 ];
 
+/* Each role's sidebar is a set of labeled groups (Classes / Coursework /
+   Progress / …), Canva-style. An item with `tab` is one pane of its page —
+   exactly one tab is visible at a time, keeping each page focused instead
+   of one long scroll. An item with no `tab` is a plain link to another
+   page (e.g. admin jumping into the student or teacher view). */
 const NAV = {
   student: [
-    { icon: '🏠', label: 'Dashboard', href: '#/dashboard' },
-    { icon: '📅', label: 'Today’s Classes', href: '#/dashboard', scroll: 'sec-today' },
-    { icon: '📚', label: 'My Classes', href: '#/dashboard', scroll: 'sec-classes' },
-    { icon: '📓', label: 'Homework', href: '#/dashboard', scroll: 'sec-homework' },
-    { icon: '🗓️', label: 'Upcoming', href: '#/dashboard', scroll: 'sec-upcoming' },
-    { icon: '📈', label: 'Progress', href: '#/dashboard', scroll: 'sec-progress' },
-    { icon: '📝', label: 'Quizzes', href: '#/dashboard', scroll: 'sec-quizzes' },
-    { icon: '🔔', label: 'Recent Activity', href: '#/dashboard', scroll: 'sec-activity' },
+    { group: 'Classes', items: [
+      { icon: '📅', label: 'Today’s Classes', href: '#/dashboard', tab: 'sec-today' },
+      { icon: '📚', label: 'My Classes', href: '#/dashboard', tab: 'sec-classes' },
+      { icon: '🗓️', label: 'Upcoming', href: '#/dashboard', tab: 'sec-upcoming' },
+    ] },
+    { group: 'Coursework', items: [
+      { icon: '📓', label: 'Homework', href: '#/dashboard', tab: 'sec-homework' },
+      { icon: '📝', label: 'Quizzes', href: '#/dashboard', tab: 'sec-quizzes' },
+    ] },
+    { group: 'Progress', items: [
+      { icon: '⚡', label: 'Quick Stats', href: '#/dashboard', tab: 'sec-stats' },
+      { icon: '📈', label: 'Progress', href: '#/dashboard', tab: 'sec-progress' },
+      { icon: '🔔', label: 'Recent Activity', href: '#/dashboard', tab: 'sec-activity' },
+      { icon: '💭', label: 'Reflect', href: '#/dashboard', tab: 'sec-reflect' },
+    ] },
   ],
   teacher: [
-    { icon: '🏠', label: 'Dashboard', href: '#/teacher' },
-    { icon: '📅', label: 'Today’s Class', href: '#/teacher', scroll: 'sec-today' },
-    { icon: '📚', label: 'My Course', href: '#/teacher', scroll: 'sec-course' },
-    { icon: '📈', label: 'Student Progress', href: '#/teacher', scroll: 'sec-progress' },
-    { icon: '🩺', label: 'File Gap Report', href: '#/teacher', scroll: 'sec-gap' },
-    { icon: '📝', label: 'Quizzes', href: '#/teacher', scroll: 'sec-quiz' },
-    { icon: '📽️', label: 'Lectures', href: '#/teacher', scroll: 'sec-lecture' },
-    { icon: '📓', label: 'Homework', href: '#/teacher', scroll: 'sec-homework' },
-    { icon: '🕘', label: 'Session History', href: '#/teacher', scroll: 'sec-history' },
-    { icon: '🤖', label: 'Agent access', href: '#/teacher', scroll: 'sec-api' },
+    { group: 'Classes', items: [
+      { icon: '📅', label: 'Today’s Class', href: '#/teacher', tab: 'sec-today' },
+      { icon: '📚', label: 'My Course', href: '#/teacher', tab: 'sec-course' },
+      { icon: '🕘', label: 'Session History', href: '#/teacher', tab: 'sec-history' },
+    ] },
+    { group: 'Coursework', items: [
+      { icon: '📝', label: 'Quizzes', href: '#/teacher', tab: 'sec-quiz' },
+      { icon: '📽️', label: 'Lectures', href: '#/teacher', tab: 'sec-lecture' },
+      { icon: '📓', label: 'Homework', href: '#/teacher', tab: 'sec-homework' },
+    ] },
+    { group: 'Progress', items: [
+      { icon: '📈', label: 'Student Progress', href: '#/teacher', tab: 'sec-progress' },
+      { icon: '🩺', label: 'File Gap Report', href: '#/teacher', tab: 'sec-gap' },
+    ] },
+    { group: 'Setup', items: [
+      { icon: '🤖', label: 'Agent access', href: '#/teacher', tab: 'sec-api' },
+    ] },
   ],
   admin: [
-    { icon: '🏠', label: 'Overview', href: '#/admin' },
-    { icon: '📚', label: 'All Courses', href: '#/admin', scroll: 'sec-courses' },
-    { icon: '👩‍🏫', label: 'All Teachers', href: '#/admin', scroll: 'sec-teachers' },
-    { icon: '🩺', label: 'Gap Reports', href: '#/admin', scroll: 'sec-gaps' },
-    { icon: '📝', label: 'Quiz Results', href: '#/admin', scroll: 'sec-quizzes' },
-    { icon: '💚', label: 'System Health', href: '#/admin', scroll: 'sec-system' },
-    { icon: '➕', label: 'Add Course', href: '#/admin', scroll: 'sec-add-course' },
-    { icon: '➕', label: 'Add Account', href: '#/admin', scroll: 'sec-add-teacher' },
-    { icon: '🎓', label: 'My Classes', href: '#/dashboard' },
-    { icon: '👩‍🏫', label: 'Teacher View', href: '#/teacher' },
+    { group: 'Overview', items: [
+      { icon: '🏠', label: 'Overview', href: '#/admin', tab: 'sec-overview' },
+      { icon: '💚', label: 'System Health', href: '#/admin', tab: 'sec-system' },
+    ] },
+    { group: 'Classes', items: [
+      { icon: '📚', label: 'All Courses', href: '#/admin', tab: 'sec-courses' },
+      { icon: '➕', label: 'Add Course', href: '#/admin', tab: 'sec-add-course' },
+    ] },
+    { group: 'People', items: [
+      { icon: '👩‍🏫', label: 'All Teachers', href: '#/admin', tab: 'sec-teachers' },
+      { icon: '➕', label: 'Add Account', href: '#/admin', tab: 'sec-add-teacher' },
+      { icon: '🔑', label: 'Agent Setup Key', href: '#/admin', tab: 'sec-setup-key' },
+    ] },
+    { group: 'Reports', items: [
+      { icon: '🩺', label: 'Gap Reports', href: '#/admin', tab: 'sec-gaps' },
+      { icon: '📝', label: 'Quiz Results', href: '#/admin', tab: 'sec-quizzes' },
+    ] },
+    { group: 'Views', items: [
+      { icon: '🎓', label: 'My Classes', href: '#/dashboard' },
+      { icon: '👩‍🏫', label: 'Teacher View', href: '#/teacher' },
+    ] },
   ],
 };
+
+const flatNavItems = (role) => (NAV[role] || []).flatMap((g) => g.items);
 
 export function homeFor(role) {
   if (role === 'teacher') return '#/teacher';
@@ -102,11 +134,19 @@ function renderNav(activePath) {
   const role = state.profile?.role;
   if (!role || !state.user) { navEl.innerHTML = ''; footEl.innerHTML = ''; return; }
 
-  const items = NAV[role] || NAV.student;
-  navEl.innerHTML = `<div class="nav-label">${esc(role)}</div>` + items.map((item) => {
-    const active = item.href === `#${activePath}` && !item.scroll;
-    return `<a class="nav-item ${active ? 'active' : ''}" href="${item.href}" ${item.scroll ? `data-scroll="${item.scroll}"` : ''}>
-      <span class="ico">${item.icon}</span><span>${esc(item.label)}</span></a>`;
+  const groups = NAV[role] || NAV.student;
+  const activeTab = activeTabByPath[activePath];
+  navEl.innerHTML = `<div class="nav-label">${esc(role)}</div>` + groups.map((group) => {
+    /* A tab item only appears once its pane actually exists for this page —
+       e.g. "Reflect" is hidden until there is a completed class to reflect on. */
+    const items = group.items.filter((item) => item.href !== `#${activePath}` || !item.tab || document.getElementById(item.tab));
+    if (!items.length) return '';
+    return `<div class="nav-label">${esc(group.group)}</div>` + items.map((item) => {
+      const isHere = item.href === `#${activePath}`;
+      const active = item.tab ? (isHere && item.tab === activeTab) : (isHere && !item.tab);
+      return `<a class="nav-item ${active ? 'active' : ''}" href="${item.href}" ${item.tab ? `data-tab="${esc(item.tab)}"` : ''}>
+        <span class="ico">${item.icon}</span><span>${esc(item.label)}</span></a>`;
+    }).join('');
   }).join('');
 
   const initials = (state.profile.name || state.user.email || '?').trim().charAt(0).toUpperCase();
@@ -144,16 +184,71 @@ document.getElementById('menu-btn').addEventListener('click', () => {
 });
 backdrop.addEventListener('click', closeSidebar);
 
+/* ------------------------------------------------------------- page tabs */
+
+const activeTabByPath = {};    // remembers which tab was open per page, this session
+let showTab = () => {};        // reassigned each page load; the nav click handler calls it
+
+function computePresentTabs(path) {
+  return flatNavItems(state.profile?.role)
+    .filter((i) => i.href === `#${path}` && i.tab && document.getElementById(i.tab))
+    .map((i) => i.tab);
+}
+
+/** Hides every tab pane on this page except `id` (or the remembered/first
+    one, if `id` no longer applies). Pure DOM bookkeeping — no nav re-render,
+    no scroll — so it is safe to call from the mutation observer below. */
+function setSectionVisibility(path, id) {
+  const present = computePresentTabs(path);
+  const target = present.includes(id) ? id : present[0];
+  present.forEach((secId) => {
+    const el = document.getElementById(secId);
+    if (el) el.hidden = secId !== target;
+  });
+  if (target) activeTabByPath[path] = target;
+  return target;
+}
+
+/** A user clicking a nav tab: switch, refresh the sidebar highlight, and
+    snap back to the top of the (now single-section) content area. */
+function applyTab(path, id) {
+  setSectionVisibility(path, id);
+  renderNav(path);
+  window.scrollTo(0, 0);
+}
+
+/** Called once per page mount, after the page's own render() has populated
+    the DOM — shows the remembered (or first) tab and hides the rest. */
+function setupPageTabs(path) {
+  const present = computePresentTabs(path);
+  if (!present.length) { showTab = () => {}; return; }
+  showTab = (id) => applyTab(path, id);
+  setSectionVisibility(path, activeTabByPath[path] || present[0]);
+  renderNav(path);
+}
+
 navEl.addEventListener('click', (event) => {
   const link = event.target.closest('.nav-item');
   if (!link) return;
   closeSidebar();
-  const target = link.dataset.scroll;
-  if (!target) return;
-  const go = () => document.getElementById(target)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  if (link.getAttribute('href') === `#${currentPath()}`) { event.preventDefault(); go(); }
-  else setTimeout(go, 450); // let the destination page mount first
+  const target = link.dataset.tab;
+  if (!target) return;   // a plain link to a different page — let it navigate normally
+  if (link.getAttribute('href') === `#${currentPath()}`) { event.preventDefault(); showTab(target); }
+  else setTimeout(() => showTab(target), 450); // let the destination page mount first
 });
+
+/* Pages often re-render themselves after a mutation — every dashboard's
+   `reload = () => render(mount, ctx)` calls the page module's render()
+   directly, bypassing the router entirely. That replaces the DOM (all
+   sections come back visible) without going through setupPageTabs above,
+   so this observer re-applies whichever tab was active any time the
+   page's content is swapped, from any cause. */
+new MutationObserver(() => {
+  const path = currentPath();
+  if (!computePresentTabs(path).length) return;
+  setSectionVisibility(path, activeTabByPath[path]);
+  renderNav(path);
+}).observe(view, { childList: true });
 
 /* ------------------------------------------------------- page mounting */
 
@@ -295,7 +390,6 @@ async function render() {
   const today = todayYMD();
   const sub = chrome ? `${dayNameOf(today)} · ${fmtDate(today, { relative: false })}` : '';
   screen('', { chrome, title: route.title, sub });
-  renderNav(path);
 
   try {
     cleanup = await route.page.render(view, {
@@ -312,6 +406,11 @@ async function render() {
       <p class="small muted" style="margin-top:8px">${esc(err.message || String(err))}</p>
       <button class="btn btn-sm" style="margin-top:12px" onclick="location.reload()">Reload</button></div>`;
   }
+
+  /* The page's own sections now exist in the DOM, so the sidebar can tell
+     which tabs actually apply here and show exactly one at a time. */
+  setupPageTabs(path);
+  renderNav(path);
 }
 
 window.addEventListener('hashchange', render);

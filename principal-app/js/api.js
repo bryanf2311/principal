@@ -95,6 +95,55 @@ export async function createCourse(data) {
 
 export const updateCourse = (courseId, data) => updateDoc(doc(db, 'courses', courseId), data);
 
+/**
+ * Deletes a course and everything that belongs to it: lessons (and their
+ * materials), milestones, sessions, quizzes (and their attempts), gap
+ * reports, homework, and the self-assessments filed against its sessions.
+ * Firestore does not cascade subcollection or courseId-referencing deletes
+ * on its own, so this collects every reference first, then deletes in
+ * batches (Firestore caps a batch at 500 writes).
+ */
+export async function deleteCourse(courseId) {
+  const lessonsSnap = await getDocs(collection(db, 'courses', courseId, 'lessons'));
+  const materialsSnaps = await Promise.all(
+    lessonsSnap.docs.map((l) => getDocs(collection(db, 'courses', courseId, 'lessons', l.id, 'materials'))),
+  );
+  const milestonesSnap = await getDocs(collection(db, 'courses', courseId, 'milestones'));
+
+  const sessionsSnap = await getDocs(query(collection(db, 'sessions'), where('courseId', '==', courseId)));
+  const assessmentsSnaps = await Promise.all(
+    sessionsSnap.docs.map((s) => getDocs(query(collection(db, 'studentAssessments'), where('sessionId', '==', s.id)))),
+  );
+
+  const quizzesSnap = await getDocs(query(collection(db, 'quizzes'), where('courseId', '==', courseId)));
+  const attemptsSnaps = await Promise.all(
+    quizzesSnap.docs.map((q) => getDocs(query(collection(db, 'quizAttempts'), where('quizId', '==', q.id)))),
+  );
+
+  const gapReportsSnap = await getDocs(query(collection(db, 'gapReports'), where('courseId', '==', courseId)));
+  const homeworkSnap = await getDocs(query(collection(db, 'homework'), where('courseId', '==', courseId)));
+
+  const refs = [
+    ...materialsSnaps.flatMap((s) => s.docs.map((d) => d.ref)),
+    ...lessonsSnap.docs.map((d) => d.ref),
+    ...milestonesSnap.docs.map((d) => d.ref),
+    ...assessmentsSnaps.flatMap((s) => s.docs.map((d) => d.ref)),
+    ...attemptsSnaps.flatMap((s) => s.docs.map((d) => d.ref)),
+    ...quizzesSnap.docs.map((d) => d.ref),
+    ...gapReportsSnap.docs.map((d) => d.ref),
+    ...homeworkSnap.docs.map((d) => d.ref),
+    ...sessionsSnap.docs.map((d) => d.ref),
+    doc(db, 'courses', courseId),   // last, so a failed cascade leaves the course as evidence something still needs cleanup
+  ];
+
+  const BATCH_LIMIT = 450;
+  for (let i = 0; i < refs.length; i += BATCH_LIMIT) {
+    const batch = writeBatch(db);
+    refs.slice(i, i + BATCH_LIMIT).forEach((ref) => batch.delete(ref));
+    await batch.commit();
+  }
+}
+
 /* -------------------------------------------------------------- lessons */
 
 export async function listLessons(courseId) {

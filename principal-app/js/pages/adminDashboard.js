@@ -9,7 +9,7 @@ import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { createSecondaryApp, DEFAULT_NEW_ACCOUNT_PASSWORD, firebaseConfig } from '../firebase-config.js';
 import {
   listUsers, listCourses, listLessons, listMilestones, listSessions, listGapReports,
-  listQuizzes, listQuizAttempts, createCourse, updateCourse, saveUserProfile, deleteUserProfile,
+  listQuizzes, listQuizAttempts, createCourse, updateCourse, deleteCourse, saveUserProfile, deleteUserProfile,
   getSetupKey, rotateSetupKey, milestoneProgress, courseHealth, warmupScore, quizAverage, HEALTH_LABEL,
 } from '../api.js';
 import {
@@ -112,7 +112,7 @@ function renderCourses(data) {
   const { courses, teachers } = data;
   const body = courses.length ? `<div class="table-wrap"><table class="table">
       <thead><tr><th>Health</th><th>Course</th><th>Slot</th><th>Teacher</th><th>Student</th>
-        <th>Schedule</th><th>Milestones</th><th>Lessons</th><th>Last report</th></tr></thead>
+        <th>Schedule</th><th>Milestones</th><th>Lessons</th><th>Last report</th><th></th></tr></thead>
       <tbody>${courses.map((c) => {
         const { health, progress, reports, lessons } = healthOf(c.id, data);
         return `<tr>
@@ -133,6 +133,9 @@ function renderCourses(data) {
             `${progress.achieved}/${progress.total}`)}</td>
           <td>${lessons.length}</td>
           <td class="nowrap tiny muted">${reports.length ? esc(fmtAgo(reports[0].filedAt)) : 'never'}</td>
+          <td class="nowrap">
+            <button class="btn btn-sm btn-danger" data-delete-course="${esc(c.id)}" title="Delete class">🗑️</button>
+          </td>
         </tr>`;
       }).join('')}</tbody></table></div>`
     : empty('No courses yet — add the first one below.', '📚');
@@ -592,6 +595,30 @@ function wire(root, mount, ctx, data) {
     } catch (err) {
       console.error(err);
       toast(`Could not rotate the key: ${err.message}`, 'err');
+      btn.disabled = false;
+    }
+  });
+
+  /* ---- delete a course and everything filed under it ---- */
+  root.addEventListener('click', async (event) => {
+    const btn = event.target.closest('[data-delete-course]');
+    if (!btn) return;
+    const course = data.courseById.get(btn.dataset.deleteCourse);
+    if (!course) return;
+    const { lessons } = data.perCourse.find((p) => p.course.id === course.id) || { lessons: [] };
+    const sessionCount = data.sessions.filter((s) => s.courseId === course.id).length;
+    const reportCount = data.reports.filter((r) => data.sessionById.get(r.sessionId)?.courseId === course.id).length;
+    if (!confirm(`Delete "${course.title}" permanently?\n\nThis removes the course along with its `
+      + `${lessons.length} lesson(s), ${sessionCount} session(s) and ${reportCount} gap report(s), plus its `
+      + 'milestones, quizzes, quiz attempts, homework and self-assessments. This cannot be undone.')) return;
+    btn.disabled = true;
+    try {
+      await deleteCourse(course.id);
+      toast(`${course.title} deleted.`, 'ok');
+      reload();
+    } catch (err) {
+      console.error(err);
+      toast(`Could not delete: ${err.message}`, 'err');
       btn.disabled = false;
     }
   });

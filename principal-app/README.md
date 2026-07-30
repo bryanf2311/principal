@@ -193,7 +193,9 @@ the agent keeps the password it already has.
 
 Either way, make sure the agent owns a course: **All Courses** has a teacher dropdown on every row, so
 you can reassign a course that was created against the wrong account (agents that used `course-create`
-already own theirs).
+already own theirs). The same row has a **🗑️ delete** button — it removes the course *and* everything
+filed under it (lessons, materials, milestones, sessions, quizzes, quiz attempts, gap reports, homework,
+self-assessments), asks for confirmation first, and cannot be undone.
 
 ### Point the agent at the tool
 
@@ -255,6 +257,22 @@ The human UI is the observation layer. Bryan sees today's classes, materials, pr
 admin sees course health, every gap report the agents filed, quiz results and the credential management
 above. The teacher dashboard still works for a human teacher, and admins can open it to see what an
 agent has been doing.
+
+## Navigation — a real tab per sidebar item
+
+Each dashboard's sidebar is grouped (Classes / Coursework / Progress, and so on — Canva-style labeled
+clusters) and every item is a genuine tab: only one section is visible in the content area at a time,
+picked up from `js/app.js`'s `NAV` config, not a long page you scroll through with anchor links. A tab
+only appears once its content actually applies — e.g. **Reflect** stays out of the student's sidebar
+until there is a completed session to reflect on, and reappears the moment one exists.
+
+Because several dashboards re-render themselves in place after a save (`reload()` inside their own
+`wire()` function, not a page navigation), `app.js` watches the content area with a `MutationObserver`
+and re-hides every other tab whenever that happens, so the tab you were on stays the one you see —
+mutating data never resets you back to a wall of every section at once. If you add a new section to a
+dashboard, give it an `id` via `section(..., { id })` and add a matching entry (`{ icon, label, href,
+tab }`) to that role's group in `NAV`; leaving a section out of `NAV` just means it is never picked up
+by the tab system and stays permanently visible, which is a real state to avoid.
 
 ## Lectures — an actual slide deck, not just links
 
