@@ -19,12 +19,18 @@
  * deviceToken. Everything it prints (deviceId/publicKey/privateKey/
  * deviceToken) goes into openclaw-config.js — nothing here is sent
  * anywhere except to your own Gateway.
+ *
+ * Needs the `ws` package (not the native WebSocket global) because the
+ * Gateway checks the WebSocket handshake's Origin header, and only `ws`
+ * lets a plain Node script set one.
  */
 import * as ed from '@noble/ed25519';
 import crypto from 'node:crypto';
+import WebSocket from 'ws';
 
 const GATEWAY_URL = process.env.GATEWAY_URL || 'ws://127.0.0.1:18789';
 const GATEWAY_TOKEN = process.env.GATEWAY_TOKEN || '';   // shared gateway password/token, if you want to try it
+const ORIGIN = process.env.GATEWAY_ORIGIN || 'http://127.0.0.1:18789';
 
 function b64url(bytes) {
   return Buffer.from(bytes).toString('base64url');
@@ -52,7 +58,7 @@ async function main() {
   console.log('  privateKey:', identity.privateKey);
   console.log(`\nConnecting to ${GATEWAY_URL} ...`);
 
-  const ws = new WebSocket(GATEWAY_URL);
+  const ws = new WebSocket(GATEWAY_URL, [], { headers: { Origin: ORIGIN } });
   let settled = false;
 
   const timeout = setTimeout(() => {
