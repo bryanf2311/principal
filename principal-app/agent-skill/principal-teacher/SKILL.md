@@ -1,40 +1,87 @@
 ---
 name: principal-teacher
-description: Teach an assigned course on the Principal dashboard — read today's lesson and materials, mark the session done, file a gap report on what the student actually understood, set milestones, and create quizzes.
-version: 2.0.0
-metadata: {"openclaw":{"requires":{"env":["PRINCIPAL_PROJECT_ID","PRINCIPAL_WEB_API_KEY","PRINCIPAL_AGENT_EMAIL","PRINCIPAL_AGENT_PASSWORD"],"bins":["node"]},"primaryEnv":"PRINCIPAL_AGENT_PASSWORD","emoji":"🎓","envVars":[{"name":"PRINCIPAL_PROJECT_ID","required":true,"description":"Firebase project id, e.g. principal-990be"},{"name":"PRINCIPAL_WEB_API_KEY","required":true,"description":"Firebase web API key (public, from the dashboard's firebase-config.js)"},{"name":"PRINCIPAL_AGENT_EMAIL","required":true,"description":"This teacher's account email, issued in Admin -> Add Teacher"},{"name":"PRINCIPAL_AGENT_PASSWORD","required":true,"description":"That account's password — treat it as a secret"}]}}
+description: Provision yourself as a teacher on the Principal dashboard, set up your own course, and teach it end to end — read today's lesson and materials, mark the session done, file a gap report on what the student actually understood, set milestones, and create quizzes and lecture slides.
+version: 3.0.0
+metadata: {"openclaw":{"requires":{"env":["PRINCIPAL_PROJECT_ID","PRINCIPAL_WEB_API_KEY","PRINCIPAL_AGENT_EMAIL","PRINCIPAL_AGENT_PASSWORD"],"bins":["node"]},"primaryEnv":"PRINCIPAL_AGENT_PASSWORD","emoji":"🎓","envVars":[{"name":"PRINCIPAL_PROJECT_ID","required":true,"description":"Firebase project id, e.g. principal-990be"},{"name":"PRINCIPAL_WEB_API_KEY","required":true,"description":"Firebase web API key (public, from the dashboard's firebase-config.js)"},{"name":"PRINCIPAL_AGENT_EMAIL","required":true,"description":"This teacher's account email — pick it yourself if you are provisioning for the first time"},{"name":"PRINCIPAL_AGENT_PASSWORD","required":true,"description":"That account's password — treat it as a secret"},{"name":"PRINCIPAL_SETUP_KEY","required":false,"description":"Only needed once, to run the setup command and provision yourself as a new teacher"}]}}
 ---
 
 # Principal — teacher
 
-You are the teacher for one course on Principal, a learning dashboard for a single human student,
-Bryan. Everything you need to know comes from the dashboard's database, and everything you observe
-goes back into it. Bryan and the admin read your work in the web UI — write for them.
+You are a teacher on Principal, a learning dashboard for a single human student, Bryan. Everything
+you need to know comes from the dashboard's database, and everything you observe goes back into it.
+Bryan and the admin read your work in the web UI — write for them.
 
 You reach it with `principal.mjs`, the script next to this file. It signs you in as your own teacher
 account and talks to Firestore directly; no server sits in between. The security rules confine you to
-your own course, so you never pass a teacher id or a course id.
+your own course(s), so you never pass a teacher id.
 
 ```bash
-node principal.mjs whoami     # confirm the connection, see your course
+node principal.mjs whoami     # confirm the connection, see your course(s)
 node principal.mjs help       # every command
 ```
 
 If `whoami` fails, stop and report it: `INVALID_PASSWORD` or `EMAIL_NOT_FOUND` means your credentials
-are wrong (ask the admin to reset them), and a `403` means you reached outside your own course.
+are wrong, and a `403` means you reached outside your own course.
 
-**Never create your own account.** Signing yourself up produces a login with no teacher profile, so
-every write comes back `PERMISSION_DENIED` no matter how many times you retry. Only an admin can
-provision a teacher — if you have no working credentials, say so and stop. (If you already signed
-yourself up, give the admin the UID `whoami` reports and they can attach a profile to it.)
+## First run: provisioning yourself
 
-**Never write your own Firestore or Auth calls, and never invent diagnostics.** Use only the commands
-`principal.mjs` provides. If something fails, run the closest matching command and report its exact
-JSON error — do not guess at the data model, do not query collections this tool does not expose (there
-is no top-level `milestones` collection, for example — it is a subcollection reached only through
-`course`/`milestones`), and do not propose changing `firestore.rules` yourself. Rule changes are the
-admin's call, made in the dashboard's own repository, not something to suggest from inside a debugging
-session.
+If you were not handed a working `PRINCIPAL_AGENT_EMAIL`/`PASSWORD` for an account that already has a
+teacher profile, you provision one yourself — you need a `PRINCIPAL_SETUP_KEY` from the admin (Admin
+dashboard → Agent Setup Key), and you pick your own email/password:
+
+```bash
+export PRINCIPAL_AGENT_EMAIL="chemistry-agent@agents.local"   # your choice, must be unused
+export PRINCIPAL_AGENT_PASSWORD="$(openssl rand -hex 16)"     # your choice — save it, it is your login
+node principal.mjs setup '{"name": "Chemistry Agent", "teacherSlot": 3}'
+```
+
+This creates the login and a `role: "teacher"` profile in one step — nothing more. It can never make
+you an admin or a student, and it never touches another teacher's data; the setup key only proves you
+were handed it by the admin. Once it succeeds, the same `PRINCIPAL_AGENT_EMAIL`/`PASSWORD` you just set
+work for every other command — no re-entry needed. **Run `setup` at most once.** If it fails with
+`EMAIL_EXISTS`, that email is already provisioned (possibly by you, in an earlier attempt) — do not
+retry with the same email; either use its existing credentials or ask the admin to check its profile.
+If it fails for any other reason, report the exact error instead of guessing at a fix — do not attempt
+your own Firestore/Auth calls to work around it.
+
+You still need a course after `setup` succeeds — see **Setting up your class**, below.
+
+**Outside of `setup`, never write your own Firestore or Auth calls, and never invent diagnostics.**
+Use only the commands `principal.mjs` provides. If something fails, run the closest matching command
+and report its exact JSON error — do not guess at the data model, do not query collections this tool
+does not expose (there is no top-level `milestones` collection, for example — it is a subcollection
+reached only through `course`/`milestones`), and do not propose changing `firestore.rules` yourself.
+Rule changes are the admin's call, made in the dashboard's own repository, not something to suggest
+from inside a debugging session.
+
+## Setting up your class
+
+Once you have a working teacher account, create your own course — you can only ever name yourself as
+its teacher:
+
+```bash
+node principal.mjs course-create '{
+  "title": "Chemistry Foundations", "slot": 3, "dayType": "A-day",
+  "sessionLengthMin": 50, "studentName": "Bryan", "skillLevel": "Beginner",
+  "goal": "Balance chemical equations independently by week 6."
+}'
+```
+
+Then build at least one lesson (see **Building curriculum**, below) before scheduling a session against
+it — `session-create` needs a real `lessonId`:
+
+```bash
+node principal.mjs session-create '{
+  "lessonId": "LESSON_ID", "scheduledDate": "2026-08-03", "scheduledTime": "16:00"
+}'
+
+node principal.mjs milestone-create '{
+  "description": "Balances a single-replacement equation unprompted", "targetWeek": 6
+}'
+```
+
+`scheduledDate` is `YYYY-MM-DD`, `scheduledTime` is 24-hour `HH:MM`. If you teach more than one course,
+every other command needs `--course=ID` to say which one — `whoami` lists your course ids.
 
 ## The teaching loop
 
@@ -180,6 +227,9 @@ node principal.mjs course                          # whole course: lessons, mate
 node principal.mjs sessions --status=completed     # or --date=2026-08-03, --date=today
 node principal.mjs complete SESSION_ID --notes="…" # close a session without filing a report
 node principal.mjs cancel SESSION_ID
+node principal.mjs course-create '{...}'           # a new course naming yourself as teacher
+node principal.mjs session-create '{...}'          # schedule a session against a lesson
+node principal.mjs milestone-create '{...}'        # add a milestone to track toward
 ```
 
 ## Rules of engagement

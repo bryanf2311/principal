@@ -16,6 +16,9 @@
      PRINCIPAL_AGENT_PASSWORD   its password
    Optional:
      PRINCIPAL_TOKEN_CACHE      where to cache the ID token
+     PRINCIPAL_SETUP_KEY        only needed for the one-time `setup` command,
+                                 which provisions PRINCIPAL_AGENT_EMAIL/
+                                 PASSWORD as a brand-new teacher account
      FIREBASE_AUTH_EMULATOR_HOST / FIRESTORE_EMULATOR_HOST  (tests)
 
    Every command prints JSON on stdout, or {"error":"…"} plus a
@@ -31,6 +34,7 @@ const PROJECT = process.env.PRINCIPAL_PROJECT_ID;
 const WEB_KEY = process.env.PRINCIPAL_WEB_API_KEY;
 const EMAIL = process.env.PRINCIPAL_AGENT_EMAIL;
 const PASSWORD = process.env.PRINCIPAL_AGENT_PASSWORD;
+const SETUP_KEY = process.env.PRINCIPAL_SETUP_KEY;
 
 const AUTH_EMULATOR = process.env.FIREBASE_AUTH_EMULATOR_HOST;
 const DB_EMULATOR = process.env.FIRESTORE_EMULATOR_HOST;
@@ -115,6 +119,59 @@ async function signIn() {
   };
   writeCache(session);
   return session;
+}
+
+/** Provisions this account as a brand-new teacher — see the `setup` command.
+    Runs before signIn(), since the account does not exist yet. */
+async function runSetup(body) {
+  if (!body.name) throw new Error('name is required, e.g. {"name": "Chemistry Agent", "teacherSlot": 3}');
+  let signedUp;
+  try {
+    signedUp = await postJson(`${AUTH_BASE}/accounts:signUp?key=${WEB_KEY}`, {
+      email: EMAIL, password: PASSWORD, returnSecureToken: true,
+    });
+  } catch (err) {
+    if (/EMAIL_EXISTS/.test(err.message)) {
+      throw new Error(`${EMAIL} already has a login. If that is you from an earlier attempt, ask the admin to `
+        + 'attach a profile to its uid instead of running setup again — do not retry setup.');
+    }
+    throw err;
+  }
+  const session = {
+    idToken: signedUp.idToken,
+    refreshToken: signedUp.refreshToken,
+    uid: signedUp.localId,
+    email: EMAIL,
+    expiresAt: Date.now() + Number(signedUp.expiresIn || 3600) * 1000,
+  };
+  writeCache(session);
+
+  await patchDoc(session, `claims/${session.uid}`, { setupKey: SETUP_KEY, createdAt: new Date() });
+
+  const teacherSlot = Number.isFinite(Number(body.teacherSlot)) ? Number(body.teacherSlot) : null;
+  try {
+    await patchDoc(session, `users/${session.uid}`, {
+      name: body.name,
+      email: EMAIL,
+      role: 'teacher',
+      teacherSlot,
+      kind: 'agent',
+      provisionedVia: 'self-setup',
+      createdAt: new Date(),
+    });
+  } catch (err) {
+    throw new Error(`Account created but the profile write was refused (${err.message}). The setup key may be `
+      + `wrong or has been rotated — check with the admin. Your account exists at uid ${session.uid}; an admin `
+      + 'can still attach a profile to it manually.');
+  }
+
+  process.stdout.write(`${JSON.stringify({
+    uid: session.uid,
+    email: EMAIL,
+    role: 'teacher',
+    teacherSlot,
+    message: "Provisioned. This process's PRINCIPAL_AGENT_EMAIL/PRINCIPAL_AGENT_PASSWORD are now valid for every other command.",
+  }, null, 2)}\n`);
 }
 
 /* --------------------------------------------- Firestore value coding */
@@ -323,6 +380,38 @@ function validateQuiz(body) {
   return null;
 }
 
+const isYMD = (s) => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s);
+const isHM = (s) => typeof s === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(s);
+
+function validateCourseCreate(body) {
+  if (!body.title) return 'title is required.';
+  if (body.slot !== undefined) {
+    const slot = Number(body.slot);
+    if (!Number.isInteger(slot) || slot < 1 || slot > 6) return 'slot must be an integer from 1 to 6.';
+  }
+  return null;
+}
+
+function validateSessionCreate(body) {
+  if (!body.lessonId) return 'lessonId is required.';
+  if (!isYMD(body.scheduledDate)) return 'scheduledDate must be YYYY-MM-DD.';
+  if (!isHM(body.scheduledTime)) return 'scheduledTime must be HH:MM (24-hour).';
+  if (body.status !== undefined && !SESSION_STATUSES.includes(body.status)) {
+    return `status must be one of ${SESSION_STATUSES.join(', ')}.`;
+  }
+  return null;
+}
+
+function validateMilestoneCreate(body) {
+  if (!body.description) return 'description is required.';
+  const targetWeek = Number(body.targetWeek);
+  if (!Number.isFinite(targetWeek) || targetWeek <= 0) return 'targetWeek must be a positive number.';
+  if (body.status !== undefined && !MILESTONE_STATUSES.includes(body.status)) {
+    return `status must be one of ${MILESTONE_STATUSES.join(', ')}.`;
+  }
+  return null;
+}
+
 /* -------------------------------------------------------------- CLI */
 
 function parseArgs(argv) {
@@ -347,6 +436,8 @@ function readPayload(argument) {
 
 const USAGE = `principal.mjs — teacher tool for Principal
 
+  setup <json|@file|->            first run only: provision this account as a new teacher
+                                   (needs PRINCIPAL_SETUP_KEY); {name, teacherSlot?}
   whoami                          your account and course(s)
   course [--course=ID]            course with lessons, materials, milestones
   today                           today's sessions, lesson and materials inlined
@@ -356,6 +447,9 @@ const USAGE = `principal.mjs — teacher tool for Principal
   gap-report <json|@file|->       file a report; supports markSessionCompleted
   milestones
   milestone <id> <status> [--notes=TEXT]
+  course-create <json|@file|->    create your own course; {title, slot?, ...}
+  session-create <json|@file|->   schedule a session; {lessonId, scheduledDate, scheduledTime, status?}
+  milestone-create <json|@file|-> add a milestone; {description, targetWeek, status?}
   lesson <json|@file|->           create a lesson (materials may nest)
   material <lessonId> <json>      attach one material (video/reading/quiz/slides)
   quiz <json|@file|->             create an auto-graded multiple-choice quiz
@@ -376,8 +470,14 @@ async function main() {
     PRINCIPAL_WEB_API_KEY: WEB_KEY,
     PRINCIPAL_AGENT_EMAIL: EMAIL,
     PRINCIPAL_AGENT_PASSWORD: PASSWORD,
+    ...(command === 'setup' ? { PRINCIPAL_SETUP_KEY: SETUP_KEY } : {}),
   })) {
     if (!value) die(`${name} is not set in the environment.`);
+  }
+
+  if (command === 'setup') {
+    await runSetup(readPayload(positional[1] || '{}'));
+    return;
   }
 
   const session = await signIn();
@@ -484,6 +584,62 @@ async function main() {
       const patch = { status, achievedDate: status === 'achieved' ? new Date() : null };
       if (typeof flags.notes === 'string') patch.notes = flags.notes;
       out({ milestone: await patchDoc(session, `courses/${course.id}/milestones/${milestoneId}`, patch) });
+      return;
+    }
+
+    case 'course-create': {
+      const body = readPayload(positional[1]);
+      const problem = validateCourseCreate(body);
+      if (problem) throw new Error(problem);
+      const created = await createDoc(session, 'courses', {
+        title: body.title,
+        teacherId: session.uid,
+        teacherName: body.teacherName || '',
+        slot: body.slot !== undefined ? Number(body.slot) : null,
+        dayType: body.dayType || 'A-day',
+        sessionLengthMin: Number(body.sessionLengthMin || 50),
+        studentName: body.studentName || '',
+        skillLevel: body.skillLevel || '',
+        goal: body.goal || '',
+        createdAt: new Date(),
+        source: 'agent',
+      });
+      out({ id: created.id });
+      return;
+    }
+
+    case 'session-create': {
+      const body = readPayload(positional[1]);
+      const problem = validateSessionCreate(body);
+      if (problem) throw new Error(problem);
+      const course = await requireCourse(session, body.courseId || flags.course);
+      const lessons = await lessonsOf(session, course.id);
+      if (!lessons.some((l) => l.id === body.lessonId)) throw new Error(`lessonId "${body.lessonId}" is not a lesson on this course.`);
+      const created = await createDoc(session, 'sessions', {
+        courseId: course.id,
+        lessonId: body.lessonId,
+        scheduledDate: body.scheduledDate,
+        scheduledTime: body.scheduledTime,
+        status: body.status || 'upcoming',
+        teacherNotes: body.teacherNotes || '',
+        createdAt: new Date(),
+      });
+      out({ id: created.id, courseId: course.id });
+      return;
+    }
+
+    case 'milestone-create': {
+      const body = readPayload(positional[1]);
+      const problem = validateMilestoneCreate(body);
+      if (problem) throw new Error(problem);
+      const course = await requireCourse(session, body.courseId || flags.course);
+      const created = await createDoc(session, `courses/${course.id}/milestones`, {
+        description: body.description,
+        targetWeek: Number(body.targetWeek),
+        status: body.status || 'not_started',
+        notes: body.notes || '',
+      });
+      out({ id: created.id, courseId: course.id });
       return;
     }
 

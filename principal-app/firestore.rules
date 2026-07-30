@@ -5,10 +5,16 @@ rules_version = '2';
    ------------------------------------------------------------
    student : reads course content, sessions, gap reports, quizzes;
              writes only its own quiz attempts and self-assessments
-   teacher : reads everything above; writes its own courses,
-             lessons, materials, milestones, sessions, quizzes and
-             gap reports; rotates its own API key
+   teacher : reads everything above; creates and writes its own
+             courses, lessons, materials, milestones, sessions,
+             quizzes and gap reports
    admin   : full read/write
+
+   An agent teacher provisions itself (see claimedCurrentSetupKey below)
+   using a setup key only the admin controls — config/setupKey. That key
+   grants role:"teacher" and nothing else; it can never be used to become
+   an admin or a student, and it never grants access to another
+   teacher's data.
 
    Deploy with:  firebase deploy --only firestore:rules
    ============================================================ */
@@ -50,6 +56,38 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/courses/$(courseId)).data.teacherId == request.auth.uid;
     }
 
+    /* An agent proves it holds the current setup key by first staking a
+       claims/{uid} doc containing it (anyone may create their own claim —
+       see below), then this compares that claim to the admin-controlled
+       value at config/setupKey. get() reads inside rules are not subject to
+       the target document's own rules, so this works even though both
+       config/setupKey and other users' claims stay unreadable to a caller
+       that doesn't already own them. */
+    function claimedCurrentSetupKey() {
+      return exists(/databases/$(database)/documents/claims/$(request.auth.uid))
+        && exists(/databases/$(database)/documents/config/setupKey)
+        && get(/databases/$(database)/documents/claims/$(request.auth.uid)).data.setupKey
+           == get(/databases/$(database)/documents/config/setupKey).data.value;
+    }
+
+    /* --------------------------------------------------------- config */
+    match /config/{doc} {
+      // Never readable directly by a non-admin: agents only ever compare
+      // against it indirectly through claimedCurrentSetupKey() above.
+      allow read, write: if isAdmin();
+    }
+
+    /* -------------------------------------------------------- claims */
+    match /claims/{uid} {
+      // Anyone may stake a claim under their own uid — this alone grants
+      // nothing; it only becomes useful if its setupKey field happens to
+      // match config/setupKey when a users/{uid} create is attempted.
+      allow create: if signedIn() && request.auth.uid == uid;
+      allow get: if signedIn() && (request.auth.uid == uid || isAdmin());
+      allow list: if isAdmin();
+      allow update, delete: if isAdmin();
+    }
+
     /* ------------------------------------------------------------ users */
     match /users/{uid} {
       // Own profile always; teachers and admins may browse the roster.
@@ -58,10 +96,16 @@ service cloud.firestore {
 
       // Admins provision everyone else. A signed-in user may NOT create its own
       // profile — otherwise anyone who can sign in could hand themselves
-      // role: "admin". The single exception is the bootstrap allowlist above,
-      // which may create its own admin document to get the system started.
+      // role: "admin". Two narrow exceptions:
+      //  - the bootstrap allowlist above, for the very first admin account;
+      //  - an agent that holds the current setup key may create ONLY its own
+      //    teacher profile (never student or admin) — this is how an agent
+      //    provisions itself without any human touching the dashboard.
       allow create: if isAdmin()
-        || (isBootstrapAdmin() && request.auth.uid == uid);
+        || (isBootstrapAdmin() && request.auth.uid == uid)
+        || (signedIn() && request.auth.uid == uid
+            && request.resource.data.role == 'teacher'
+            && claimedCurrentSetupKey());
 
       // Users may edit their own profile (including rotating their API key)
       // but may not promote themselves or change their slot.
@@ -76,7 +120,12 @@ service cloud.firestore {
     /* ---------------------------------------------------------- courses */
     match /courses/{courseId} {
       allow read: if signedIn();
-      allow create, delete: if isAdmin();
+      // A teacher may create a course that names itself as the teacher —
+      // this is how an agent sets up its own class after provisioning
+      // itself. It can never create a course for someone else.
+      allow create: if isAdmin()
+        || (isTeacher() && request.resource.data.teacherId == request.auth.uid);
+      allow delete: if isAdmin();
       allow update: if isAdmin() || (isTeacher() && resource.data.teacherId == request.auth.uid);
 
       match /lessons/{lessonId} {

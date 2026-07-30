@@ -153,7 +153,21 @@ opens a browser — it **signs in as its own Firebase Auth user and writes strai
 the security rules confining it to its own course. Nothing sits in between, so there is **nothing to
 deploy and no paid plan**.
 
-### 1. Create each agent teacher
+There are two ways to get an agent teacher going. Either works; the agent's own instructions
+(`PROMPT.md`) default to provisioning itself, which is the point of talking to it in natural language
+instead of clicking through the dashboard yourself.
+
+### Option A — the agent provisions itself
+
+**Admin → Agent Setup Key** — press **✨ Generate**, then hand the agent that key plus a project id and
+web API key (see the block below). Tell it what course to set up in plain language; it runs
+`node principal.mjs setup '{"name": "..."}'` to create its own login and `role: "teacher"` profile
+(never admin, never student, never another teacher's data — the key only proves the admin issued it),
+then `course-create`, `lesson`, `session-create` and `milestone-create` to build out the class itself.
+Rotate the key any time from the same panel; that invalidates it for anyone who hasn't used it yet
+without touching agents that already provisioned themselves.
+
+### Option B — the admin creates the account first
 
 **Admin → Add Teacher or Student → Role: Teacher → Teacher type: 🤖 AI agent.** That creates the Auth
 account the agent signs in as (with a generated password) plus its profile, then shows the four
@@ -168,17 +182,19 @@ PRINCIPAL_AGENT_PASSWORD=…
 
 **Copy the password then** — Firebase stores only a hash. Reopen the other three any time with
 **🔌 Connect** in All Teachers; replace a lost password in **Firebase console → Authentication →
-Users → Reset password**.
+Users → Reset password**. **🗑️** in the same row removes the teacher's profile (revokes access
+immediately) without touching the underlying Auth login, which you clean up from the console if needed.
 
-**If the agent already signed itself up**, it has a login with no profile, which is why every write
-comes back `PERMISSION_DENIED`. Open **"The account already exists"** in the same form, paste the UID
-the agent reports, and it attaches a teacher profile to that account — no new login, and the agent
-keeps the password it already has.
+**If the agent already signed itself up outside of `setup`**, it has a login with no profile, which is
+why every write comes back `PERMISSION_DENIED`. Open **"The account already exists"** in the same form,
+paste the UID the agent reports, and it attaches a teacher profile to that account — no new login, and
+the agent keeps the password it already has.
 
-Finally, make sure the agent owns a course: **All Courses** has a teacher dropdown on every row, so you
-can reassign a course that was created against the wrong account.
+Either way, make sure the agent owns a course: **All Courses** has a teacher dropdown on every row, so
+you can reassign a course that was created against the wrong account (agents that used `course-create`
+already own theirs).
 
-### 2. Point the agent at it
+### Point the agent at the tool
 
 Install `agent-skill/principal-teacher/` into the agent's workspace (both `SKILL.md` and
 `principal.mjs`), or paste the condensed prompt from `PROMPT.md` into its instructions. Then:
@@ -196,15 +212,19 @@ API so the agent never handles typed Firestore JSON.
 
 | command | what it does |
 | --- | --- |
-| `whoami` | account, role, course, today's date |
-| `course` | course with lessons, materials and milestones |
+| `setup <json>` | one-time: provision this account as a new teacher (needs `PRINCIPAL_SETUP_KEY`) |
+| `whoami` | account, role, course(s), today's date |
+| `course [--course=]` | course with lessons, materials and milestones |
 | `today` | today's sessions, lesson and materials inlined |
 | `sessions [--date=YMD\|today] [--status=]` | filtered sessions |
 | `complete <id> [--notes=]` / `cancel <id>` | close a session |
 | `gap-report <json\|@file\|->` | file a report; `markSessionCompleted` closes the session |
 | `reports [--limit=N]` | reports this agent filed |
 | `milestones` / `milestone <id> <status> [--notes=]` | read and update milestones |
-| `lesson <json>` / `material <lessonId> <json>` | build curriculum |
+| `course-create <json>` | create a course naming yourself as its teacher |
+| `session-create <json>` | schedule a session against one of your lessons |
+| `milestone-create <json>` | add a milestone to one of your courses |
+| `lesson <json>` / `material <lessonId> <json>` | build curriculum, including `type: "slides"` lectures |
 | `quiz <json>` | create an auto-graded multiple-choice quiz |
 | `attempts [--quizId=]` | the student's graded quiz attempts |
 | `assessments` | the student's self-assessments |
@@ -217,12 +237,15 @@ reports from dashboard-filed ones.
 
 The security rules, not the tool. An agent's account can read the course content it teaches, write its
 own course's lessons, materials, milestones and sessions, file gap reports under its own teacher id,
-and create quizzes for its own course. Anything else — another teacher's course, promoting itself,
-writing the student's quiz answers, **or creating its own profile** — is refused by Firestore. Covered
-by 79 rules assertions and 25 end-to-end CLI assertions against the emulator.
+and create quizzes for its own course. A signed-in account holding the *current* admin-issued setup key
+may create exactly one thing for itself: a `users/{uid}` profile with `role: "teacher"` — never
+`admin`, never `student`, and it can never touch another uid. Anything else — another teacher's course,
+promoting itself, writing the student's quiz answers — is refused by Firestore. Covered by 98 rules
+assertions and 51 end-to-end CLI assertions against the emulator.
 
 Note that anyone can *create* a Firebase Auth login (that is how email/password sign-up works), but a
-login with no `users/{uid}` profile can do nothing at all. Provisioning is what grants access.
+login with no `users/{uid}` profile can do nothing at all: the setup key is what turns that login into
+a teacher, and without a current key the `setup` command fails the same way self-signup always has.
 
 ### What the dashboards are for
 
@@ -302,7 +325,11 @@ course.
   directly, and the rules are the only thing standing between a role and someone else's data. That
   makes `firestore.rules` the most important file in the repo — deploy it before anything else.
 * Nobody can create or promote their own profile: `users` `create` is admin-only apart from the
-  bootstrap allowlist, and self-`update` cannot change `role` or `teacherSlot`. This matters most
-  when Google sign-in is enabled, since anyone with a Google account can reach the sign-in step —
-  without a profile they see "Almost there" and can do nothing else.
+  bootstrap allowlist and the setup-key path (which only ever grants `role: "teacher"`), and
+  self-`update` cannot change `role` or `teacherSlot`. This matters most when Google sign-in is
+  enabled, since anyone with a Google account can reach the sign-in step — without a profile, and
+  without the setup key, they see "Almost there" and can do nothing else.
+* The setup key (`config/setupKey`, managed from **Admin → Agent Setup Key**) is a shared secret, not
+  a per-agent invite — anyone who has it can provision one teacher account. Treat it like a password:
+  generate it fresh, hand it only to agents you are actively provisioning, and rotate it after.
 * All Firestore text is HTML-escaped before rendering (`esc()` in `js/ui.js`).

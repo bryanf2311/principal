@@ -7,7 +7,7 @@
    ============================================================ */
 
 import {
-  collection, collectionGroup, doc, addDoc, getDoc, getDocs, setDoc, updateDoc,
+  collection, collectionGroup, doc, addDoc, getDoc, getDocs, setDoc, updateDoc, deleteDoc,
   query, where, serverTimestamp, writeBatch, limit as fsLimit,
 } from 'firebase/firestore';
 import { db } from './firebase-config.js';
@@ -40,6 +40,39 @@ export async function listUsers(role = null) {
 
 export async function touchLastActive(uid) {
   try { await updateDoc(doc(db, 'users', uid), { lastActiveAt: serverTimestamp() }); } catch { /* non-critical */ }
+}
+
+/**
+ * Removes a user's profile document. This does NOT delete the underlying
+ * Firebase Auth account (the client SDK cannot delete another user's login)
+ * — it revokes access, since every rule keys off this document existing.
+ * The Auth account itself is cleaned up from the Firebase console if needed.
+ */
+export async function deleteUserProfile(uid) {
+  await deleteDoc(doc(db, 'users', uid));
+}
+
+/* ------------------------------------------------------- agent setup key */
+
+/**
+ * The one secret that lets an agent provision its own teacher account
+ * (see firestore.rules: claimedCurrentSetupKey). Admin-only to read or set.
+ */
+export async function getSetupKey() {
+  const snap = await getDoc(doc(db, 'config', 'setupKey'));
+  return snap.exists() ? snap.data().value || '' : '';
+}
+
+export function generateSetupKey() {
+  const bytes = new Uint8Array(24);
+  crypto.getRandomValues(bytes);
+  return `sk_${Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')}`;
+}
+
+export async function rotateSetupKey() {
+  const value = generateSetupKey();
+  await setDoc(doc(db, 'config', 'setupKey'), { value, rotatedAt: serverTimestamp() });
+  return value;
 }
 
 /* -------------------------------------------------------------- courses */

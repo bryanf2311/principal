@@ -9,8 +9,8 @@ import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { createSecondaryApp, DEFAULT_NEW_ACCOUNT_PASSWORD, firebaseConfig } from '../firebase-config.js';
 import {
   listUsers, listCourses, listLessons, listMilestones, listSessions, listGapReports,
-  listQuizzes, listQuizAttempts, createCourse, updateCourse, saveUserProfile,
-  milestoneProgress, courseHealth, warmupScore, quizAverage, HEALTH_LABEL,
+  listQuizzes, listQuizAttempts, createCourse, updateCourse, saveUserProfile, deleteUserProfile,
+  getSetupKey, rotateSetupKey, milestoneProgress, courseHealth, warmupScore, quizAverage, HEALTH_LABEL,
 } from '../api.js';
 import {
   esc, section, card, badge, bar, empty, healthDot, skeletonPage, sheet,
@@ -20,13 +20,14 @@ import {
 export async function render(mount, ctx) {
   mount.innerHTML = skeletonPage();
 
-  const [users, courses, sessions, reports, quizzes, attempts] = await Promise.all([
+  const [users, courses, sessions, reports, quizzes, attempts, setupKey] = await Promise.all([
     listUsers(),
     listCourses(),
     listSessions(),
     listGapReports(),
     listQuizzes(),
     listQuizAttempts(),
+    getSetupKey(),
   ]);
 
   const perCourse = await Promise.all(courses.map(async (course) => ({
@@ -43,7 +44,7 @@ export async function render(mount, ctx) {
   const students = users.filter((u) => u.role === 'student');
 
   const data = { users, teachers, students, courses, perCourse, sessions, reports, quizzes,
-    attempts, userById, courseById, sessionById, lessonById };
+    attempts, setupKey, userById, courseById, sessionById, lessonById };
 
   ctx.setHeader('Admin Dashboard',
     `${courses.length} courses · ${teachers.length} teachers · ${reports.length} gap reports`);
@@ -52,6 +53,7 @@ export async function render(mount, ctx) {
     renderOverview(data),
     renderCourses(data),
     renderTeachers(data),
+    renderSetupKey(data),
     renderGapReports(data),
     renderQuizResults(data),
     renderSystem(data),
@@ -159,11 +161,32 @@ function renderTeachers(data) {
           <td>${t.kind === 'agent' ? badge('agent', 'blue') : badge('human', 'gray')}</td>
           <td class="nowrap">
             <button class="btn btn-sm" data-connect="${esc(t.id)}" title="Show connection details">🔌 Connect</button>
+            <button class="btn btn-sm" data-remove-teacher="${esc(t.id)}" title="Remove profile">🗑️</button>
           </td>
         </tr>`;
       }).join('')}</tbody></table></div>`
     : empty('No teacher accounts yet — create one below.', '👩‍🏫');
   return section('👩‍🏫 All Teachers', card(body), { id: 'sec-teachers' });
+}
+
+function renderSetupKey({ setupKey }) {
+  const masked = setupKey ? `${setupKey.slice(0, 6)}${'•'.repeat(Math.max(0, setupKey.length - 10))}${setupKey.slice(-4)}` : '';
+  return section('🔑 Agent Setup Key', card(`
+    <p class="small muted">An agent can provision itself as a new teacher — no dashboard clicks —
+      by running <code>node principal.mjs setup</code> with this key in <code>PRINCIPAL_SETUP_KEY</code>.
+      It can only ever create its own <code>role: "teacher"</code> profile this way, never an admin or
+      student, and never another teacher's data. After it runs, it still needs a course: create one
+      below with its account as the teacher, or tell the agent to run <code>course-create</code> itself.</p>
+    <div class="row" style="margin-top:12px;align-items:center">
+      ${setupKey
+        ? `<code class="mono small" data-key-display data-full="${esc(setupKey)}" data-masked="${esc(masked)}">${esc(masked)}</code>
+           <button class="btn btn-sm" data-reveal-key type="button">👁️ Reveal</button>
+           <button class="btn btn-sm" data-copy-value="${esc(setupKey)}" type="button">📋 Copy</button>`
+        : '<span class="tiny muted">No setup key yet — generate one before an agent can self-provision.</span>'}
+      <button class="btn btn-sm" id="rotate-key-btn" type="button">${setupKey ? '🔄 Rotate' : '✨ Generate'}</button>
+    </div>
+    ${setupKey ? '<p class="hint" style="margin-top:8px">Rotating invalidates the old key immediately — any agent mid-setup with the old value will fail and must be given the new one.</p>' : ''}`,
+    { title: 'Self-provisioning' }), { id: 'sec-setup-key' });
 }
 
 function renderGapReports(data) {
@@ -512,6 +535,65 @@ function wire(root, mount, ctx, data) {
     if (!connect) return;
     const teacher = data.userById.get(connect.dataset.connect);
     if (teacher) showAgentEnv(teacher);
+  });
+
+  /* ---- remove a teacher's profile ---- */
+  root.addEventListener('click', async (event) => {
+    const btn = event.target.closest('[data-remove-teacher]');
+    if (!btn) return;
+    const teacher = data.userById.get(btn.dataset.removeTeacher);
+    if (!teacher) return;
+    const owns = data.courses.filter((c) => c.teacherId === teacher.id);
+    const warning = owns.length
+      ? ` This teacher still owns ${owns.length} course(s) — those will be orphaned until reassigned.`
+      : '';
+    if (!confirm(`Remove ${teacher.name || teacher.email}'s profile?${warning}\n\nThis revokes dashboard/agent access immediately but does not delete the underlying Firebase Auth login — do that from the Firebase console if needed.`)) return;
+    btn.disabled = true;
+    try {
+      await deleteUserProfile(teacher.id);
+      toast(`${teacher.name || teacher.email} removed.`, 'ok');
+      reload();
+    } catch (err) {
+      console.error(err);
+      toast(`Could not remove: ${err.message}`, 'err');
+      btn.disabled = false;
+    }
+  });
+
+  /* ---- copy buttons that live on the page itself, not inside a sheet ---- */
+  root.querySelectorAll('[data-copy-value]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(btn.dataset.copyValue);
+        toast('Copied.', 'ok');
+      } catch {
+        toast('Copy failed — select the text and copy manually.', 'err');
+      }
+    });
+  });
+
+  /* ---- agent setup key: reveal / generate / rotate ---- */
+  root.querySelector('[data-reveal-key]')?.addEventListener('click', (event) => {
+    const btn = event.currentTarget;
+    const display = root.querySelector('[data-key-display]');
+    if (!display) return;
+    const revealed = display.textContent === display.dataset.full;
+    display.textContent = revealed ? display.dataset.masked : display.dataset.full;
+    btn.textContent = revealed ? '👁️ Reveal' : '🙈 Hide';
+  });
+  root.querySelector('#rotate-key-btn')?.addEventListener('click', async (event) => {
+    const btn = event.currentTarget;
+    if (data.setupKey && !confirm('Rotate the setup key? Any agent mid-setup with the old key will fail until given the new one.')) return;
+    btn.disabled = true;
+    try {
+      await rotateSetupKey();
+      toast('Setup key ready.', 'ok');
+      reload();
+    } catch (err) {
+      console.error(err);
+      toast(`Could not rotate the key: ${err.message}`, 'err');
+      btn.disabled = false;
+    }
   });
 
   /* ---- reassign a course to another teacher ---- */
