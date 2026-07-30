@@ -368,6 +368,30 @@ body.auth-mode .view { padding: 0; max-width: none; }
 .tl-date { font-size: 12px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }
 .tl-title { font-weight: 600; margin-top: 2px; }
 
+/* Chat */
+.chat-thread {
+  max-height: 420px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px 2px 14px;
+}
+.chat-msg {
+  max-width: 82%;
+  padding: 10px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+.chat-msg.user { align-self: flex-end; background: var(--accent); color: #fff; }
+.chat-msg.assistant { align-self: flex-start; background: #f1f3fa; color: var(--ink); }
+.chat-msg.pending { opacity: .65; }
+.chat-msg.error { background: var(--red-soft); color: #b3213c; }
+.chat-form { display: flex; gap: 10px; align-items: flex-end; }
+.chat-form textarea { flex: 1; resize: vertical; min-height: 44px; }
+
 /* Tabs (My Classes) */
 .tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
 .tab-btn {

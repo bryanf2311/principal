@@ -18,6 +18,8 @@ principal-app/
   css/style.css
   js/
     firebase-config.js    project config (already filled in)
+    openclaw-config.js    OpenClaw Gateway URL + session key (you fill this in)
+    openclaw-client.js    streams a chat reply from the Gateway
     app.js                router, auth listener, sidebar
     api.js                every Firestore read/write + derived metrics
     ui.js                 rendering helpers (escaping, cards, badges, toasts)
@@ -273,6 +275,57 @@ mutating data never resets you back to a wall of every section at once. If you a
 dashboard, give it an `id` via `section(..., { id })` and add a matching entry (`{ icon, label, href,
 tab }`) to that role's group in `NAV`; leaving a section out of `NAV` just means it is never picked up
 by the tab system and stays permanently visible, which is a real state to avoid.
+
+## Chat with a teacher agent — direct Gateway connection, not a webhook
+
+The student dashboard's **💬 Talk to a Teacher** tab is live chat with a teacher's OpenClaw agent,
+streamed straight into the page. Two integration shapes were on the table for this:
+
+1. **Direct Gateway client connection** — the browser talks straight to the OpenClaw Gateway
+   (WebSocket or REST), the same way any front-end UI that *is* the primary interface for an agent
+   would.
+2. **Custom channel plugin / webhook** — OpenClaw POSTs inbound/outbound messages to a webhook this
+   app hosts, decoupled and queue-friendly, suited to a backend with its own auth and database.
+
+This app went with **option 1**, for one concrete reason: **there is no server anywhere in this
+stack.** Netlify serves static files with no build step (`netlify.toml` is a publish path plus an
+SPA redirect); `firebase.json` wires nothing but Firestore rules and indexes; the earlier
+[Teachers are AI agents](#5-teachers-are-ai-agents) section exists precisely because Cloud Functions
+were tried and dropped — they need the paid Blaze plan, and this project deliberately stays on the
+free Spark plan. A webhook needs a server to receive it; building one just for chat would either
+mean adding Cloud Functions back (the thing already ruled out once) or standing up new
+infrastructure outside Netlify/Firebase entirely. The direct-client model needs no new server for
+*this app* — the Gateway is a service OpenClaw already runs; the browser just calls it.
+
+That trade lands two real prerequisites on you, not on the code:
+
+* **The Gateway must be reachable over `wss://`/`https://` from the public internet.** The dashboard
+  is served over `https://`, and browsers refuse an insecure `ws://`/`http://` call from an `https://`
+  page — a bare `localhost:18789` will not work for a visitor's browser regardless. If the Gateway
+  only listens locally today, put a TLS-terminating reverse proxy in front of it (Caddy, nginx, a
+  Cloudflare Tunnel) and point `js/openclaw-config.js` at that public URL.
+* **`sessionKey` is a shared secret**, embedded in the client bundle — the same trust model already
+  used for `PRINCIPAL_SETUP_KEY` elsewhere in this app. That is a reasonable call for a single-family
+  app where everyone who can reach the dashboard is already trusted, and a bad one to copy into
+  anything multi-tenant. If OpenClaw can mint a short-lived, per-user token instead, prefer that.
+
+### What's implemented vs. what needs confirming against your Gateway
+
+`js/openclaw-client.js` streams from `POST {gatewayBaseUrl}/v1/chat/completions` using the
+OpenAI-compatible chat-completions wire format (`{messages, stream: true}` in, `data: {choices:
+[{delta: {content}}]}` SSE chunks out, terminated by `data: [DONE]`) — a documented, well-known
+shape. The Gateway's raw WebSocket endpoint (`ws://host:18789/ws`) was the other option this app
+could have used instead, but nothing in this codebase has a record of its message envelope, so code
+written against it would be a guess rather than something built to a real spec. If your Gateway's
+REST stream deviates from the OpenAI shape, or you'd rather use the WebSocket transport,
+`openclaw-client.js` is the one file that needs replacing — the chat UI in `studentDashboard.js`
+only calls `streamChat({ sessionKey, messages, onToken, onDone, onError })` and does not otherwise
+care how the reply gets there.
+
+Fill in `js/openclaw-config.js` (`gatewayBaseUrl`, `sessionKey`) to turn the tab on; until then it
+shows a plain "needs setup" message instead of a broken form. The thread itself is not persisted —
+it is a live conversation, not a teaching record, and clears when the tab next re-renders; gap
+reports and homework stay the durable record of what happened.
 
 ## Lectures — an actual slide deck, not just links
 

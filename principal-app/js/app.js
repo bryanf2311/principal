@@ -55,6 +55,9 @@ const NAV = {
       { icon: '📚', label: 'My Classes', href: '#/dashboard', tab: 'sec-classes' },
       { icon: '🗓️', label: 'Upcoming', href: '#/dashboard', tab: 'sec-upcoming' },
     ] },
+    { group: 'Chat', items: [
+      { icon: '💬', label: 'Talk to a Teacher', href: '#/dashboard', tab: 'sec-chat' },
+    ] },
     { group: 'Coursework', items: [
       { icon: '📓', label: 'Homework', href: '#/dashboard', tab: 'sec-homework' },
       { icon: '📝', label: 'Quizzes', href: '#/dashboard', tab: 'sec-quizzes' },
