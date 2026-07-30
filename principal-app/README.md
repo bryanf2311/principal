@@ -62,21 +62,29 @@ browser — Chrome/Edge 89+, Safari 16.4+, Firefox 108+.
 
 ## 2. Create the first admin account
 
-Rules deliberately prevent anyone from self-promoting to admin, so bootstrap one account by hand:
+Nobody can hand themselves `role: "admin"` — the rules only let an existing admin create
+profiles. That leaves the chicken-and-egg problem of the *first* admin, which the
+**bootstrap allowlist** solves:
 
-1. **Authentication → Users → Add user**: `principal@example.com` with a password.
-2. Copy that user's **UID**.
-3. **Firestore → Start collection** `users` → document ID = that UID, with fields:
+* `BOOTSTRAP_ADMIN_EMAILS` in `js/firebase-config.js` decides what the app offers.
+* `isBootstrapAdmin()` in `firestore.rules` is what actually enforces it.
 
-| field | type | value |
-| --- | --- | --- |
-| `name` | string | `Principal` |
-| `email` | string | `principal@example.com` |
-| `role` | string | `admin` |
-| `teacherSlot` | null | — |
-| `apiKey` | string | (leave empty) |
+Both currently list **`bryanf2311@gmail.com`**. So:
 
-Sign in as that account and you land on the Admin dashboard.
+1. Deploy the rules (`firebase deploy --only firestore:rules`) — the app cannot write the
+   profile until the allowlist is live in the rules.
+2. Sign in as that address (Google, or Email/Password with a user you added in
+   **Authentication → Users**).
+3. You land on **Almost there** with a **Create my admin profile** button. Enter your name,
+   press it, and you are in.
+
+An address that is *not* on the list gets no button — it sees the field-by-field values to
+enter in the Firestore console instead (the console has no JSON paste), which is the manual
+escape hatch if you would rather not touch the allowlist.
+
+**Once your admin account exists, empty `BOOTSTRAP_ADMIN_EMAILS`, remove the address from
+`isBootstrapAdmin()`, and redeploy the rules.** After that, every account is provisioned
+by an admin through **Admin → Add Teacher**, and self-provisioning is closed entirely.
 
 ## 3. Seed the demo data
 
@@ -187,4 +195,8 @@ so Functions are genuinely optional.
   if you ever onboard a second student.
 * Admin "Add Teacher" signs the new account up on a secondary Firebase app instance, so your own
   session is never replaced. Change the initial password after first sign-in.
+* Nobody can create or promote their own profile: `users` `create` is admin-only apart from the
+  bootstrap allowlist, and self-`update` cannot change `role` or `teacherSlot`. This matters most
+  when Google sign-in is enabled, since anyone with a Google account can reach the sign-in step —
+  without a profile they see "Almost there" and can do nothing else.
 * All Firestore text is HTML-escaped before rendering (`esc()` in `js/ui.js`).

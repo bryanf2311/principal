@@ -3,9 +3,9 @@
    ============================================================ */
 
 import { onAuthStateChanged, signOut } from 'firebase/auth';
-import { auth, isConfigured } from './firebase-config.js';
-import { getUserProfile, touchLastActive } from './api.js';
-import { esc, toast, skeletonPage, fmtDate, todayYMD, dayNameOf } from './ui.js';
+import { auth, isConfigured, BOOTSTRAP_ADMIN_EMAILS } from './firebase-config.js';
+import { getUserProfile, saveUserProfile, touchLastActive } from './api.js';
+import { esc, toast, skeletonPage, fmtDate, todayYMD, dayNameOf, bindForm } from './ui.js';
 
 import * as loginPage from './pages/login.js';
 import * as studentPage from './pages/studentDashboard.js';
@@ -181,25 +181,74 @@ function setupScreen() {
 function noProfileScreen() {
   const uid = state.user?.uid || '';
   const email = state.user?.email || '';
+  const suggestedName = state.user?.displayName || email.split('@')[0] || 'Your Name';
+  /* The rules enforce this list too — the check here only decides what to show. */
+  const canBootstrap = BOOTSTRAP_ADMIN_EMAILS
+    .some((allowed) => allowed.toLowerCase() === email.toLowerCase());
   screen(`<div class="auth-wrap"><div class="auth-card">
       <div class="auth-brand"><div class="mark">🔒</div><h1>Almost there</h1>
         <p>This account has no profile in Firestore yet.</p></div>
-      <p class="small muted">Signed in as <strong>${esc(email)}</strong>. Create a document at
-        <code>users/${esc(uid)}</code> with these fields, then reload:</p>
-      <pre class="mono small" style="background:#f6f7fb;padding:12px;border-radius:9px;overflow:auto">{
-  "name": "${esc(email.split('@')[0] || 'Your Name')}",
-  "email": "${esc(email)}",
-  "role": "admin",          // or "teacher" / "student"
-  "teacherSlot": null,
-  "apiKey": ""
-}</pre>
-      <button class="btn btn-block" id="np-signout">Sign out</button>
+
+      <p class="small muted">Signed in as <strong>${esc(email)}</strong>.</p>
+
+      ${canBootstrap ? `
+        <div class="note" style="margin-top:12px">Your address is on the bootstrap allowlist,
+          so you can create your own admin profile right here.</div>
+        <form id="np-form" style="margin-top:14px">
+          <div data-error></div>
+          <div class="field">
+            <label for="np-name">Your name</label>
+            <input id="np-name" name="name" type="text" required
+              value="${esc(suggestedName)}" autocomplete="name">
+          </div>
+          <button class="btn btn-primary btn-block" type="submit">Create my admin profile</button>
+        </form>
+      ` : `
+        <p class="small muted" style="margin-top:10px">An admin has to provision this account, or
+          your address has to be added to <code>BOOTSTRAP_ADMIN_EMAILS</code> in
+          <code>js/firebase-config.js</code> <em>and</em> to <code>isBootstrapAdmin()</code> in
+          <code>firestore.rules</code> (then redeploy the rules).</p>
+        <p class="small muted" style="margin-top:10px">To do it by hand, add a document at
+          <code>users/${esc(uid)}</code> in the Firestore console with these fields
+          — the console has no JSON paste, so enter them one at a time:</p>
+        <div class="table-wrap" style="margin-top:8px"><table class="table">
+          <thead><tr><th>Field</th><th>Type</th><th>Value</th></tr></thead>
+          <tbody>
+            <tr><td class="mono">name</td><td>string</td><td>${esc(suggestedName)}</td></tr>
+            <tr><td class="mono">email</td><td>string</td><td>${esc(email)}</td></tr>
+            <tr><td class="mono">role</td><td>string</td><td>admin, teacher or student</td></tr>
+            <tr><td class="mono">teacherSlot</td><td>null</td><td>— (1–6 for teachers)</td></tr>
+            <tr><td class="mono">apiKey</td><td>string</td><td>leave empty</td></tr>
+          </tbody>
+        </table></div>
+        <button class="btn btn-block" style="margin-top:14px" onclick="location.reload()">I created it — reload</button>
+      `}
+
+      <button class="btn btn-block" id="np-signout" style="margin-top:10px">Sign out</button>
       <p class="auth-hint">Or run <code>npm run seed</code> in <code>scripts/</code> to create every demo account at once.</p>
     </div></div>`, { chrome: false, title: 'Profile needed' });
+
   document.getElementById('np-signout').addEventListener('click', async () => {
     await signOut(auth);
     navigate('#/login');
   });
+
+  const form = document.getElementById('np-form');
+  if (form) {
+    bindForm(form, async (data) => {
+      await saveUserProfile(state.user.uid, {
+        name: String(data.get('name') || '').trim() || suggestedName,
+        email,
+        role: 'admin',
+        teacherSlot: null,
+        apiKey: '',
+        createdAt: new Date(),
+      });
+      state.profile = await getUserProfile(state.user.uid);
+      toast('Admin profile created — welcome.', 'ok');
+      navigate(homeFor(state.profile?.role));
+    });
+  }
 }
 
 function deniedScreen(role) {

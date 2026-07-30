@@ -36,6 +36,18 @@ export const API_BASE_URL = '';
    "Add Teacher" form. Users should change it after first sign-in. */
 export const DEFAULT_NEW_ACCOUNT_PASSWORD = 'Principal123!';
 
+/* Bootstrap allowlist. Someone has to create the first admin profile before any
+   admin exists to create it, so these addresses — and only these — may create
+   their own users/{uid} document with role "admin", straight from the app.
+   Everyone else must be provisioned by an admin.
+
+   This list is mirrored in ../firestore.rules (isBootstrapAdmin) — the rules are
+   what actually enforce it, so change both together. Once the admin accounts
+   exist you can empty this list and redeploy the rules. */
+export const BOOTSTRAP_ADMIN_EMAILS = [
+  'bryanf2311@gmail.com',
+];
+
 import { initializeApp, deleteApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';

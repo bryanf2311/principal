@@ -34,6 +34,17 @@ service cloud.firestore {
     function isTeacher() { return role() == 'teacher'; }
     function isStudent() { return role() == 'student'; }
 
+    /* Bootstrap allowlist: the very first admin has to create its own profile,
+       because no admin exists yet to create it. Only these email addresses may
+       do that, and only for their own document. Keep this list in sync with
+       BOOTSTRAP_ADMIN_EMAILS in js/firebase-config.js, and trim it once the
+       admin accounts exist. */
+    function isBootstrapAdmin() {
+      return signedIn() && request.auth.token.email in [
+        'bryanf2311@gmail.com'
+      ];
+    }
+
     function ownsCourse(courseId) {
       return isTeacher()
         && get(/databases/$(database)/documents/courses/$(courseId)).data.teacherId == request.auth.uid;
@@ -45,7 +56,12 @@ service cloud.firestore {
       allow get: if signedIn() && (request.auth.uid == uid || isAdmin() || isTeacher());
       allow list: if isAdmin() || isTeacher();
 
-      allow create: if isAdmin() || (signedIn() && request.auth.uid == uid);
+      // Admins provision everyone else. A signed-in user may NOT create its own
+      // profile — otherwise anyone who can sign in could hand themselves
+      // role: "admin". The single exception is the bootstrap allowlist above,
+      // which may create its own admin document to get the system started.
+      allow create: if isAdmin()
+        || (isBootstrapAdmin() && request.auth.uid == uid);
 
       // Users may edit their own profile (including rotating their API key)
       // but may not promote themselves or change their slot.
