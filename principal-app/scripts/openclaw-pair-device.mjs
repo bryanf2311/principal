@@ -71,25 +71,31 @@ function buildDeviceAuthPayloadV2({ deviceId, clientId, clientMode, role, scopes
   return ['v2', deviceId, clientId, clientMode, role, scopes.join(','), String(signedAtMs), token ?? '', nonce].join('|');
 }
 
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
 /** One connect attempt. Resolves to {outcome: 'connected', helloOk} |
  * {outcome: 'not-paired', requestId} | {outcome: 'rejected', error} |
- * {outcome: 'no-response'}. Never throws for ordinary protocol outcomes. */
-function attemptConnect(identity, { verbose }) {
+ * {outcome: 'no-response'}. Never throws for ordinary protocol outcomes.
+ *
+ * IMPORTANT: on NOT_PAIRED we do NOT close the socket. The pending
+ * pairing request appears to be tied to this specific live connection —
+ * closing it (even to "retry" a moment later) destroys the pending
+ * request instantly, so `devices approve` never has anything to find.
+ * Instead we hold the connection open and wait for the Gateway to push
+ * something once it's approved. */
+function attemptConnect(identity, { verbose, onPending, waitMs }) {
   return new Promise((resolve) => {
     const log = (...args) => { if (verbose) console.log(...args); };
     const ws = new WebSocket(GATEWAY_URL, [], { headers: { Origin: ORIGIN } });
     let settled = false;
+    let deadline = null;
     const finish = (result) => {
       if (settled) return;
       settled = true;
-      clearTimeout(timeout);
+      clearTimeout(deadline);
       try { ws.close(); } catch { /* already closed */ }
       resolve(result);
     };
 
-    const timeout = setTimeout(() => finish({ outcome: 'no-response' }), 10_000);
+    deadline = setTimeout(() => finish({ outcome: 'no-response' }), 10_000);
 
     ws.addEventListener('open', () => log('socket open, waiting for connect.challenge...'));
 
@@ -152,6 +158,19 @@ function attemptConnect(identity, { verbose }) {
       if (msg.type === 'res' && msg.ok === false) {
         const details = msg.error?.details;
         if (details?.code === 'PAIRING_REQUIRED') {
+          if (onPending && !settled) {
+            // Do not finish() — keep the socket open and extend how long
+            // we're willing to wait, instead of tearing the connection
+            // (and the pending request with it) down.
+            onPending(details.requestId);
+            clearTimeout(deadline);
+            deadline = setTimeout(() => finish({ outcome: 'still-pending', requestId: details.requestId }), waitMs ?? 10_000);
+            const heartbeat = setInterval(() => {
+              if (settled) { clearInterval(heartbeat); return; }
+              console.log('... still waiting for approval (socket held open)');
+            }, 15_000);
+            return;
+          }
           finish({ outcome: 'not-paired', requestId: details.requestId });
         } else {
           finish({ outcome: 'rejected', error: msg.error });
@@ -172,50 +191,38 @@ async function main() {
   console.log('  privateKey:', identity.privateKey);
 
   console.log(`\nConnecting to ${GATEWAY_URL} ...`);
-  const first = await attemptConnect(identity, { verbose: true });
 
-  if (first.outcome === 'connected') {
-    printConnected(first.helloOk);
+  // Single connection, held open the whole time. If it comes back
+  // PAIRING_REQUIRED we do NOT reconnect — we just keep this same socket
+  // alive and wait, since the pending request lives only as long as the
+  // connection that created it does.
+  const result = await attemptConnect(identity, {
+    verbose: true,
+    waitMs: 3 * 60_000,
+    onPending: (requestId) => {
+      console.log(`\nPENDING — requestId: ${requestId}`);
+      console.log('Approve it now, in another terminal on this VPS (this script will keep');
+      console.log('the connection open and wait — do not re-run it):');
+      console.log(`  openclaw-native devices approve ${requestId}`);
+      console.log('Waiting up to 3 minutes...\n');
+    },
+  });
+
+  if (result.outcome === 'connected') {
+    printConnected(result.helloOk);
     process.exit(0);
   }
-  if (first.outcome === 'rejected') {
-    console.log('\nREJECTED:', JSON.stringify(first.error));
+  if (result.outcome === 'rejected') {
+    console.log('\nREJECTED:', JSON.stringify(result.error));
     process.exit(1);
   }
-  if (first.outcome === 'no-response') {
-    console.log('\nNo response from the Gateway (closeCode:', first.closeCode, first.closeReason, '). Check GATEWAY_URL/connectivity.');
+  if (result.outcome === 'still-pending') {
+    console.log('\nGave up after 3 minutes without approval.');
+    console.log(`Check: openclaw-native devices list  (look for requestId ${result.requestId})`);
+    console.log('Then run this script again once you can see it pending and approve it quickly.');
     process.exit(2);
   }
-
-  // not-paired: keep retrying so there's a real window to run `devices
-  // approve` in — the pending request appears to be tied to a live
-  // connection attempt (or has a very short TTL), so a single one-shot
-  // attempt races the approval instead of waiting for it.
-  console.log(`\nPENDING — requestId: ${first.requestId}`);
-  console.log('Approve it now, in another terminal on this VPS:');
-  console.log(`  openclaw-native devices approve ${first.requestId}`);
-  console.log('Retrying the connect every 4s for up to 3 minutes so you have time...\n');
-
-  const deadline = Date.now() + 3 * 60_000;
-  while (Date.now() < deadline) {
-    await sleep(4_000);
-    const attempt = await attemptConnect(identity, { verbose: false });
-    if (attempt.outcome === 'connected') {
-      console.log('retry succeeded.');
-      printConnected(attempt.helloOk);
-      process.exit(0);
-    }
-    if (attempt.outcome === 'rejected') {
-      console.log('\nREJECTED on retry:', JSON.stringify(attempt.error));
-      process.exit(1);
-    }
-    if (attempt.outcome === 'not-paired') {
-      console.log(`still pending (requestId now: ${attempt.requestId}) — waiting...`);
-    } else {
-      console.log('no response on retry, still waiting...');
-    }
-  }
-  console.log('\nGave up after 3 minutes without approval. Run this script again once approved.');
+  console.log('\nNo response from the Gateway (closeCode:', result.closeCode, result.closeReason, '). Check GATEWAY_URL/connectivity.');
   process.exit(2);
 }
 
