@@ -37,6 +37,12 @@ import WebSocket from 'ws';
 
 const execFileAsync = promisify(execFile);
 const OPENCLAW_BIN = process.env.OPENCLAW_BIN || 'openclaw-native';
+// `openclaw-native` is commonly a shell alias like
+// `OPENCLAW_HOME=$HOME/.openclaw-native /path/to/openclaw` — execFile
+// bypasses the shell (that's also why plain PATH lookup fails on an
+// alias), so if your setup needs this, pass the real binary path via
+// OPENCLAW_BIN and the value via OPENCLAW_HOME_OVERRIDE explicitly.
+const OPENCLAW_HOME_OVERRIDE = process.env.OPENCLAW_HOME_OVERRIDE || '';
 
 const GATEWAY_URL = process.env.GATEWAY_URL || 'ws://127.0.0.1:18789';
 const GATEWAY_TOKEN = process.env.GATEWAY_TOKEN || '';   // shared gateway password/token, if you want to try it
@@ -172,9 +178,10 @@ function attemptConnect(identity, { verbose }) {
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function autoApprove(requestId) {
-  console.log(`\nRunning: ${OPENCLAW_BIN} devices approve ${requestId}`);
+  console.log(`\nRunning: ${OPENCLAW_HOME_OVERRIDE ? `OPENCLAW_HOME=${OPENCLAW_HOME_OVERRIDE} ` : ''}${OPENCLAW_BIN} devices approve ${requestId}`);
   try {
-    const { stdout, stderr } = await execFileAsync(OPENCLAW_BIN, ['devices', 'approve', requestId]);
+    const env = OPENCLAW_HOME_OVERRIDE ? { ...process.env, OPENCLAW_HOME: OPENCLAW_HOME_OVERRIDE } : process.env;
+    const { stdout, stderr } = await execFileAsync(OPENCLAW_BIN, ['devices', 'approve', requestId], { env });
     if (stdout.trim()) console.log(stdout.trim());
     if (stderr.trim()) console.log(stderr.trim());
     return true;
