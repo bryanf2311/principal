@@ -31,6 +31,15 @@ export async function saveUserProfile(uid, data) {
   await setDoc(doc(db, 'users', uid), data, { merge: true });
 }
 
+/**
+ * Creates a users document with a generated id, for accounts that never sign in
+ * — an AI teacher only needs an API key, not Firebase Auth credentials.
+ */
+export async function createUserProfile(data) {
+  const ref = await addDoc(collection(db, 'users'), { createdAt: serverTimestamp(), ...data });
+  return ref.id;
+}
+
 export async function listUsers(role = null) {
   const ref = collection(db, 'users');
   const snap = await getDocs(role ? query(ref, where('role', '==', role)) : ref);

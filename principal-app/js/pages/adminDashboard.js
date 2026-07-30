@@ -6,10 +6,10 @@
    ============================================================ */
 
 import { createUserWithEmailAndPassword } from 'firebase/auth';
-import { createSecondaryApp, DEFAULT_NEW_ACCOUNT_PASSWORD } from '../firebase-config.js';
+import { createSecondaryApp, DEFAULT_NEW_ACCOUNT_PASSWORD, API_BASE_URL } from '../firebase-config.js';
 import {
   listUsers, listCourses, listLessons, listMilestones, listSessions, listGapReports,
-  listQuizzes, listQuizAttempts, createCourse, saveUserProfile, rotateApiKey,
+  listQuizzes, listQuizAttempts, createCourse, saveUserProfile, createUserProfile, rotateApiKey,
   generateApiKey, milestoneProgress, courseHealth, warmupScore, quizAverage, HEALTH_LABEL,
 } from '../api.js';
 import {
@@ -144,7 +144,9 @@ function renderTeachers(data) {
           .filter(Boolean).sort((a, b) => b - a)[0];
         return `<tr>
           <td>${t.teacherSlot ? `<span class="pill">${esc(t.teacherSlot)}</span>` : '<span class="muted">—</span>'}</td>
-          <td><span class="strong">${esc(t.name || '—')}</span><br><span class="tiny muted">${esc(t.email || '')}</span></td>
+          <td><span class="strong">${t.kind === 'agent' ? '🤖 ' : ''}${esc(t.name || '—')}</span>
+            ${t.kind === 'agent' ? badge('agent', 'blue') : ''}
+            <br><span class="tiny muted">${esc(t.email || '')}</span></td>
           <td>${theirCourses.length ? theirCourses.map((c) => esc(c.title)).join('<br>') : '<span class="tiny muted">unassigned</span>'}</td>
           <td>${theirReports.length}</td>
           <td class="nowrap tiny muted">${lastActivity ? esc(fmtAgo(lastActivity)) : 'never'}</td>
@@ -153,7 +155,8 @@ function renderTeachers(data) {
             : badge('missing', 'red')}</td>
           <td class="nowrap">
             <button class="btn btn-sm" data-rotate="${esc(t.id)}">${t.apiKey ? '♻︎ Rotate' : '＋ Generate'}</button>
-            ${t.apiKey ? `<button class="btn btn-sm" data-copy-key="${esc(t.id)}">📋</button>` : ''}
+            ${t.apiKey ? `<button class="btn btn-sm" data-copy-key="${esc(t.id)}">📋</button>
+              <button class="btn btn-sm" data-connect="${esc(t.id)}" title="Show key and env block">🔌</button>` : ''}
           </td>
         </tr>`;
       }).join('')}</tbody></table></div>`
@@ -194,7 +197,7 @@ function gapListHtml(reports, data) {
   if (!reports.length) return empty('No reports match those filters.', '🔍');
   return `<div class="table-wrap"><table class="table">
     <thead><tr><th>Filed</th><th>Course</th><th>Lesson</th><th>Teacher</th>
-      <th>Warm-up</th><th>Application</th><th>Gaps</th><th></th></tr></thead>
+      <th>Warm-up</th><th>Application</th><th>Gaps</th><th>Via</th><th></th></tr></thead>
     <tbody>${reports.map((r) => {
       const session = sessionById.get(r.sessionId);
       const course = courseById.get(session?.courseId);
@@ -208,6 +211,7 @@ function gapListHtml(reports, data) {
         <td>${esc(pct(warmupScore(r)))}</td>
         <td>${badge(humanize(r.applicationResult || 'n/a'), kindFor(r.applicationResult))}</td>
         <td>${gaps.length ? gaps.map((g) => badge(humanize(g.severity), kindFor(g.severity))).join(' ') : badge('none', 'green')}</td>
+        <td>${r.source === 'api' ? badge('agent', 'blue') : badge('dashboard', 'gray')}</td>
         <td><button class="btn-link tiny" data-report="${esc(r.id)}">View</button></td>
       </tr>`;
     }).join('')}</tbody></table></div>`;
@@ -265,7 +269,8 @@ function renderSystem(data) {
   ].filter(Boolean).sort((a, b) => b - a)[0];
 
   const checks = [
-    { ok: teachers.length > 0, label: `${teachers.length} teacher accounts`, detail: 'slots 1–6' },
+    { ok: teachers.length > 0, label: `${teachers.length} teacher accounts`,
+      detail: `${teachers.filter((t) => t.kind === 'agent').length} agents · ${teachers.filter((t) => t.kind !== 'agent').length} human` },
     { ok: !missingKeys.length, label: 'API keys issued', detail: missingKeys.length ? `missing: ${missingKeys.map((t) => t.name || t.email).join(', ')}` : 'every teacher has a key' },
     { ok: !unassigned.length, label: 'Teachers assigned to courses', detail: unassigned.length ? `unassigned: ${unassigned.map((t) => t.name || t.email).join(', ')}` : 'all assigned' },
     { ok: !orphanCourses.length, label: 'Courses point at real teachers', detail: orphanCourses.length ? `${orphanCourses.length} course(s) reference a missing user` : 'all valid' },
@@ -341,28 +346,66 @@ function renderAddAccount({ teachers }) {
     <form id="teacher-form">
       <div data-error></div>
       <div class="field-row">
-        <div class="field"><label for="t-name">Full name</label>
-          <input id="t-name" name="name" type="text" required placeholder="Ms. Rivera"></div>
-        <div class="field"><label for="t-email">Email</label>
-          <input id="t-email" name="email" type="email" required placeholder="teacher3@example.com"></div>
+        <div class="field"><label for="t-kind">Teacher type</label>
+          <select id="t-kind" name="kind" required>
+            <option value="agent" selected>🤖 AI agent — API key only, no sign-in</option>
+            <option value="human">🧑 Human — email + password sign-in</option>
+          </select></div>
+        <div class="field"><label for="t-name">Name</label>
+          <input id="t-name" name="name" type="text" required placeholder="Algebra Agent"></div>
+        <div class="field"><label for="t-email">Email / identifier</label>
+          <input id="t-email" name="email" type="email" required placeholder="algebra-agent@agents.local"></div>
       </div>
       <div class="field-row">
         <div class="field"><label for="t-role">Role</label>
           <select id="t-role" name="role" required>
             <option value="teacher" selected>Teacher</option>
-            <option value="student">Student</option>
-            <option value="admin">Admin</option>
+            <option value="student">Student (human)</option>
+            <option value="admin">Admin (human)</option>
           </select></div>
         <div class="field"><label for="t-slot">Teacher slot</label>
           <select id="t-slot" name="teacherSlot">${slotOptions}</select></div>
-        <div class="field"><label for="t-pass">Initial password</label>
-          <input id="t-pass" name="password" type="text" required minlength="6"
+        <div class="field" id="t-pass-field" hidden><label for="t-pass">Initial password</label>
+          <input id="t-pass" name="password" type="text" minlength="6"
             value="${esc(DEFAULT_NEW_ACCOUNT_PASSWORD)}"></div>
       </div>
-      <button class="btn btn-primary" type="submit">Create account</button>
-      <p class="hint">Creates the Firebase Auth user and its <code>users/{uid}</code> profile, and issues an API key
-        for teachers. Your own session stays signed in. Ask them to change the password after first sign-in.</p>
-    </form>`, { title: 'New account', sub: 'Teacher by default — students and admins too' }), { id: 'sec-add-teacher' });
+      <button class="btn btn-primary" type="submit">Create teacher</button>
+      <p class="hint" id="t-hint"></p>
+    </form>`, {
+    title: 'New teacher',
+    sub: 'Agents connect with an API key; humans sign in with a password',
+  }), { id: 'sec-add-teacher' });
+}
+
+/** Shows the full key plus the env block an agent runtime needs. */
+function revealKey({ name, apiKey, slot }) {
+  const base = API_BASE_URL || 'https://REGION-PROJECT.cloudfunctions.net/api';
+  const env = `PRINCIPAL_API_URL=${base}\nPRINCIPAL_API_KEY=${apiKey}`;
+  const dialog = sheet(`🔑 ${esc(name)} — API key`, `
+    <p class="small muted">Paste this into the agent’s environment. It is the only credential the
+      agent needs: every route is scoped to ${esc(name)}’s${slot ? ` slot ${esc(slot)}` : ''} course.</p>
+    <div class="keybox" style="margin-top:12px">
+      <code>${esc(apiKey)}</code>
+      <button class="btn btn-sm" data-copy-value="${esc(apiKey)}">📋 Copy key</button>
+    </div>
+    <p class="small strong" style="margin:16px 0 6px">Environment for the agent</p>
+    <pre class="mono tiny" style="background:#f6f7fb;padding:12px;border-radius:9px;overflow:auto;margin:0">${esc(env)}</pre>
+    <p style="margin-top:10px"><button class="btn btn-sm" data-copy-value="${esc(env)}">📋 Copy both variables</button></p>
+    <p class="tiny muted" style="margin-top:14px">Verify the connection:</p>
+    <pre class="mono tiny" style="background:#f6f7fb;padding:12px;border-radius:9px;overflow:auto;margin:4px 0 0">curl -H "X-API-Key: ${esc(apiKey)}" ${esc(base)}/</pre>
+    <p class="tiny muted" style="margin-top:12px">You can copy this key again any time from
+      <strong>All Teachers</strong>, or rotate it there if it leaks.</p>`);
+
+  dialog.querySelectorAll('[data-copy-value]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(btn.dataset.copyValue);
+        toast('Copied.', 'ok');
+      } catch {
+        toast('Copy failed — select the text and copy manually.', 'err');
+      }
+    });
+  });
 }
 
 /* --------------------------------------------------------------- wiring */
@@ -433,6 +476,12 @@ function wire(root, mount, ctx, data) {
       }
       return;
     }
+    const connect = event.target.closest('[data-connect]');
+    if (connect) {
+      const teacher = data.userById.get(connect.dataset.connect);
+      if (teacher?.apiKey) revealKey({ name: teacher.name || teacher.email, apiKey: teacher.apiKey, slot: teacher.teacherSlot });
+      return;
+    }
     if (copy) {
       const teacher = data.userById.get(copy.dataset.copyKey);
       try {
@@ -474,31 +523,61 @@ function wire(root, mount, ctx, data) {
     });
   }
 
-  /* ---- add account (secondary app keeps the admin signed in) ---- */
+  /* ---- add teacher: agent (API key only) or human (Auth account) ---- */
   const teacherForm = root.querySelector('#teacher-form');
   if (teacherForm) {
+    const kindSelect = teacherForm.querySelector('#t-kind');
+    const roleSelect = teacherForm.querySelector('#t-role');
+    const passField = teacherForm.querySelector('#t-pass-field');
+    const passInput = teacherForm.querySelector('#t-pass');
+    const hint = teacherForm.querySelector('#t-hint');
+
+    /* Only teachers can be agents — a student or admin is a person who signs in. */
+    const syncKind = () => {
+      const forcedHuman = roleSelect.value !== 'teacher';
+      if (forcedHuman) kindSelect.value = 'human';
+      kindSelect.disabled = forcedHuman;
+      const isAgent = kindSelect.value === 'agent';
+      passField.hidden = isAgent;
+      passInput.required = !isAgent;
+      teacherForm.querySelector('[type=submit]').textContent = isAgent ? 'Create agent teacher' : 'Create account';
+      hint.innerHTML = isAgent
+        ? 'Writes a <code>users</code> profile with a fresh API key and no Firebase Auth account — an agent authenticates with the key alone. You get the key and its env block immediately.'
+        : 'Creates the Firebase Auth user and its <code>users/{uid}</code> profile. Your own session stays signed in. Ask them to change the password after first sign-in.';
+    };
+    kindSelect.addEventListener('change', syncKind);
+    roleSelect.addEventListener('change', syncKind);
+    syncKind();
+
     bindForm(teacherForm, async (fd) => {
       const role = String(fd.get('role'));
+      const isAgent = role === 'teacher' && String(fd.get('kind')) === 'agent';
       const email = String(fd.get('email')).trim();
       const name = String(fd.get('name')).trim();
-      const password = String(fd.get('password'));
       const slot = role === 'teacher' ? Number(fd.get('teacherSlot')) : null;
+      const apiKey = role === 'teacher' ? generateApiKey() : '';
 
-      const secondary = createSecondaryApp();
-      try {
-        const cred = await createUserWithEmailAndPassword(secondary.auth, email, password);
-        await saveUserProfile(cred.user.uid, {
-          name,
-          email,
-          role,
-          teacherSlot: slot,
-          apiKey: role === 'teacher' ? generateApiKey() : '',
-          createdAt: new Date(),
+      if (isAgent) {
+        /* No Auth account: the key is the credential. */
+        await createUserProfile({
+          name, email, role, teacherSlot: slot, apiKey, kind: 'agent', createdAt: new Date(),
         });
-      } finally {
-        secondary.dispose();
+        toast(`${name} connected as an agent teacher.`, 'ok');
+        revealKey({ name, apiKey, slot });
+      } else {
+        const password = String(fd.get('password'));
+        const secondary = createSecondaryApp();
+        try {
+          const cred = await createUserWithEmailAndPassword(secondary.auth, email, password);
+          await saveUserProfile(cred.user.uid, {
+            name, email, role, teacherSlot: slot, apiKey, kind: 'human', createdAt: new Date(),
+          });
+        } finally {
+          secondary.dispose();
+        }
+        toast(`${name} added as ${role}.`, 'ok');
+        if (apiKey) revealKey({ name, apiKey, slot });
       }
-      toast(`${name} added as ${role}.`, 'ok');
       reload();
     });
   }

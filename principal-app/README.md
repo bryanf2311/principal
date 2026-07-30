@@ -1,6 +1,8 @@
 # 🎓 Principal — Learning Dashboard
 
-A personal learning platform for one student (Bryan) and up to six teachers.
+A personal learning platform for one **human student** (Bryan) and up to six **AI teachers** —
+OpenClaw agents that read their course and write back their work over an API-key HTTP API.
+Human teachers still work; they just sign in to the dashboard instead.
 Static frontend on Netlify, Firebase (Auth + Firestore, optional Functions) as the backend.
 Everything — users, courses, lessons, materials, quizzes — lives in Firestore. Nothing is hardcoded:
 add a sixth teacher and a course document and the UI picks them up on the next load.
@@ -23,7 +25,11 @@ principal-app/
     pages/
       login.js  studentDashboard.js  teacherDashboard.js
       adminDashboard.js  quiz.js
-  functions/              optional: X-API-Key HTTP API + key rotation
+  functions/              the X-API-Key HTTP API the agents drive + key rotation
+    api.js                every agent route (createApi, testable without deploying)
+    lib.js                payload validation
+  agent-skill/            OpenClaw skill an agent installs to use the API
+    principal-teacher/SKILL.md
   scripts/seed.mjs        optional: Admin-SDK seeder (creates Auth users)
 ```
 
@@ -130,7 +136,11 @@ netlify deploy --prod     # production
 Then add your Netlify domain to **Firebase → Authentication → Settings → Authorized domains**,
 otherwise sign-in is rejected on the deployed URL.
 
-## 5. Optional: Cloud Functions (X-API-Key API)
+## 5. Deploy the Cloud Functions
+
+Required when teachers are AI agents — the HTTP API is how they connect. See
+**[Teachers are AI agents](#teachers-are-ai-agents)** below for the full setup, endpoint table and
+key handout. In short:
 
 ```bash
 cd principal-app/functions
@@ -138,32 +148,96 @@ npm install
 firebase deploy --only functions
 ```
 
-Then set `API_BASE_URL` in `js/firebase-config.js` to the deployed `api` URL so the teacher
-dashboard shows ready-to-paste curl commands.
+Then set `API_BASE_URL` in `js/firebase-config.js` to the deployed `api` URL.
+
+A `rotateApiKey` callable ships alongside it; the dashboard rotates keys directly through Firestore,
+so the callable is only needed if you want rotation from outside the app.
+
+## Teachers are AI agents
+
+The student is a person who signs in. Each teacher is an OpenClaw agent that never opens a browser,
+so the dashboard's job is to **connect** them: provision the teacher, hand over a key, and expose
+the whole teacher surface over HTTP.
+
+### 1. Deploy the API
+
+The Cloud Functions are required in this setup — they are the agents' only way in.
+
+```bash
+cd principal-app/functions
+npm install
+firebase deploy --only functions
+```
+
+Put the deployed URL in `API_BASE_URL` in `js/firebase-config.js` so the dashboard shows the agents'
+exact env block instead of a placeholder.
+
+### 2. Create each agent teacher
+
+**Admin → Add Teacher → Teacher type: 🤖 AI agent.** That writes a `users` profile with
+`role: "teacher"`, `kind: "agent"` and a fresh key, and **no Firebase Auth account** — an agent has
+no password to manage. The dashboard then shows the key with a ready-to-paste env block:
+
+```
+PRINCIPAL_API_URL=https://REGION-PROJECT.cloudfunctions.net/api
+PRINCIPAL_API_KEY=pk_…
+```
+
+Copy it again later, or rotate it, from **All Teachers** (📋 copies the key, 🔌 reopens the env
+block). Assign the agent a course with **Add Course**.
+
+Students and admins are always human accounts with a password — only teachers can be agents, and
+**a student never gets an API key**: the API refuses any key whose role is not teacher or admin.
+
+### 3. Point the agent at it
+
+Install `agent-skill/principal-teacher/` into the agent's workspace (or publish it to ClawHub) and
+set the two env vars. The skill documents the teaching loop, the fixed vocabularies, and the rules
+of engagement. The agent can also discover the surface itself:
+
+```bash
+curl -H "X-API-Key: pk_…" https://REGION-PROJECT.cloudfunctions.net/api/
+```
+
+`GET /` returns the teacher's identity, their course, today's date and every endpoint — which suits
+OpenClaw's heartbeat: wake, ask what is on today, teach, file the report.
+
+### Endpoints
+
+Every request needs `X-API-Key: pk_…`. Everything is scoped to the key's own course; anything
+outside it is `403`.
 
 | method | route | purpose |
 | --- | --- | --- |
-| `GET` | `/course` | the caller's course(s) with lessons, materials, milestones |
-| `GET` | `/sessions` | sessions for the caller's course(s) |
-| `GET` | `/gap-reports` | the 50 most recent reports the caller filed |
-| `POST` | `/gap-reports` | file a gap report |
+| `GET` | `/` | identity, course, today, endpoint index |
+| `GET` | `/course` | course(s) with lessons, materials and milestones nested |
+| `GET` | `/sessions` | sessions; `?date=YYYY-MM-DD\|today`, `?status=` |
+| `GET` | `/sessions/today` | today's sessions with the lesson and materials inlined |
+| `GET` | `/sessions/{id}` | one session |
+| `PATCH` | `/sessions/{id}` | `status`, `teacherNotes`, `scheduledDate`, `scheduledTime` |
+| `POST` | `/lessons` | add a lesson, optionally with a `materials` array |
+| `POST` | `/materials` | attach a material to a lesson |
+| `GET` | `/milestones` | course milestones |
+| `PATCH` | `/milestones/{id}` | `status` (stamps `achievedDate`), `notes` |
+| `GET` | `/gap-reports` | reports this key filed, newest first |
+| `POST` | `/gap-reports` | file a report; `markSessionCompleted` closes the session too |
+| `GET` | `/quizzes` | quizzes on the course |
+| `POST` | `/quizzes` | create an auto-graded multiple-choice quiz |
+| `GET` | `/quiz-attempts` | the student's graded attempts; `?quizId=` |
+| `GET` | `/assessments` | the student's self-assessments for this course |
 
-Every request needs `X-API-Key: pk_…` — a teacher's key from their dashboard.
+A teacher with exactly one course may omit `courseId` everywhere — the usual case for one agent per
+slot. With more than one, requests that need it return `400` naming the course ids.
 
-```bash
-curl -H "X-API-Key: pk_…" https://REGION-PROJECT.cloudfunctions.net/api/course
+Writes made this way are tagged `source: "api"`, and the admin's gap report table shows a **Via**
+column — `agent` or `dashboard` — so you can always tell who filed what.
 
-curl -X POST https://REGION-PROJECT.cloudfunctions.net/api/gap-reports \
-  -H "X-API-Key: pk_…" -H "Content-Type: application/json" \
-  -d '{"sessionId":"…","applicationTask":"Solve 3x+7=22",
-       "applicationResult":"partially_correct",
-       "warmupResults":[{"question":"2x=10","result":"correct"}],
-       "identifiedGaps":[{"description":"sign errors","severity":"major"}],
-       "remediationPlan":"Sign-change drills"}'
-```
+### What the dashboards are for now
 
-A `rotateApiKey` callable is included too; the web app rotates keys directly through Firestore,
-so Functions are genuinely optional.
+Nothing about the human UI is wasted: it is the observation layer. Bryan sees today's classes,
+materials, progress and quizzes; the admin sees course health, every gap report the agents filed,
+quiz results and the key management above. The teacher dashboard still works if you ever add a
+human teacher, and admins can open it read-only to see what an agent has been doing.
 
 ## Routes
 
