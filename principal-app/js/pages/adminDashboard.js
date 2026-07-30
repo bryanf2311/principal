@@ -6,7 +6,7 @@
    ============================================================ */
 
 import { createUserWithEmailAndPassword } from 'firebase/auth';
-import { createSecondaryApp, DEFAULT_NEW_ACCOUNT_PASSWORD, API_BASE_URL } from '../firebase-config.js';
+import { createSecondaryApp, DEFAULT_NEW_ACCOUNT_PASSWORD, apiBaseUrl } from '../firebase-config.js';
 import {
   listUsers, listCourses, listLessons, listMilestones, listSessions, listGapReports,
   listQuizzes, listQuizAttempts, createCourse, saveUserProfile, createUserProfile, rotateApiKey,
@@ -379,7 +379,7 @@ function renderAddAccount({ teachers }) {
 
 /** Shows the full key plus the env block an agent runtime needs. */
 function revealKey({ name, apiKey, slot }) {
-  const base = API_BASE_URL || 'https://REGION-PROJECT.cloudfunctions.net/api';
+  const base = apiBaseUrl;
   const env = `PRINCIPAL_API_URL=${base}\nPRINCIPAL_API_KEY=${apiKey}`;
   const dialog = sheet(`🔑 ${esc(name)} — API key`, `
     <p class="small muted">Paste this into the agent’s environment. It is the only credential the

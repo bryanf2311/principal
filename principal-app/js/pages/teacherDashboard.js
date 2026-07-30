@@ -12,7 +12,7 @@ import {
   milestoneProgress, courseHealth, warmupScore, averageWarmup, trendOf, quizAverage,
   HEALTH_LABEL,
 } from '../api.js';
-import { API_BASE_URL } from '../firebase-config.js';
+import { apiBaseUrl } from '../firebase-config.js';
 import {
   esc, section, card, badge, bar, empty, healthDot, materialLink, sparkline, sheet,
   skeletonPage, fmtDate, fmtTime, fmtAgo, fmtDateTime, todayYMD, kindFor, humanize,
@@ -415,7 +415,7 @@ function renderApiKey(ctx, isOwner) {
     ), { id: 'sec-api' });
   }
   const key = ctx.profile.apiKey || '';
-  const base = API_BASE_URL || 'https://REGION-PROJECT.cloudfunctions.net/api';
+  const base = apiBaseUrl;
   return section('🔑 API Key', card(`
     <p class="small muted">Use this key with the <code>X-API-Key</code> header to read your course data or file
       gap reports from scripts. Treat it like a password — rotating it immediately invalidates the old one.</p>

@@ -124,7 +124,7 @@ Seeded accounts:
 
 ## 4. Deploy to Netlify
 
-No build step — the folder *is* the site.
+Live at **https://tourmaline-bavarois-a0a452.netlify.app** — no build step, the folder *is* the site.
 
 ```bash
 npm install -g netlify-cli
@@ -133,8 +133,38 @@ netlify deploy            # draft URL
 netlify deploy --prod     # production
 ```
 
-Then add your Netlify domain to **Firebase → Authentication → Settings → Authorized domains**,
-otherwise sign-in is rejected on the deployed URL.
+Then add the domain to **Firebase → Authentication → Settings → Authorized domains**:
+
+```
+tourmaline-bavarois-a0a452.netlify.app
+```
+
+Without it, Firebase rejects sign-in on the live site with `auth/unauthorized-domain` (the app
+surfaces that as a readable message on the login form).
+
+### Two different URLs
+
+They are easy to mix up:
+
+| URL | who uses it |
+| --- | --- |
+| `https://tourmaline-bavarois-a0a452.netlify.app` | **people** — Bryan and the admin, in a browser |
+| `https://us-central1-principal-990be.cloudfunctions.net/api` | **agents** — the HTTP API, `X-API-Key` |
+
+The agents never touch the Netlify URL; the dashboard never needs the Functions URL typed in by
+hand. If you would rather serve both from one hostname, add this to `netlify.toml` **above** the
+catch-all redirect and point the agents at `https://tourmaline-bavarois-a0a452.netlify.app/api`:
+
+```toml
+[[redirects]]
+  from = "/api/*"
+  to = "https://us-central1-principal-990be.cloudfunctions.net/api/:splat"
+  status = 200
+  force = true
+```
+
+Order matters — Netlify applies the first matching rule, and the existing `/*` rule would
+otherwise swallow `/api`.
 
 ## 5. Deploy the Cloud Functions
 
@@ -169,8 +199,17 @@ npm install
 firebase deploy --only functions
 ```
 
-Put the deployed URL in `API_BASE_URL` in `js/firebase-config.js` so the dashboard shows the agents'
-exact env block instead of a placeholder.
+The deploy prints the live URL, e.g.:
+
+```
+Function URL (api(us-central1)): https://us-central1-principal-990be.cloudfunctions.net/api
+```
+
+You do **not** need to copy that anywhere. The dashboard derives it from the project id as
+`https://<FUNCTIONS_REGION>-<projectId>.cloudfunctions.net/api`, so for this project it already
+shows `https://us-central1-principal-990be.cloudfunctions.net/api`. Two cases need an edit in
+`js/firebase-config.js`: change `FUNCTIONS_REGION` if you deployed to another region, or set
+`API_BASE_URL` to override the whole thing (custom domain or a Hosting rewrite).
 
 ### 2. Create each agent teacher
 
@@ -179,7 +218,7 @@ exact env block instead of a placeholder.
 no password to manage. The dashboard then shows the key with a ready-to-paste env block:
 
 ```
-PRINCIPAL_API_URL=https://REGION-PROJECT.cloudfunctions.net/api
+PRINCIPAL_API_URL=https://us-central1-principal-990be.cloudfunctions.net/api
 PRINCIPAL_API_KEY=pk_…
 ```
 
@@ -196,7 +235,7 @@ set the two env vars. The skill documents the teaching loop, the fixed vocabular
 of engagement. The agent can also discover the surface itself:
 
 ```bash
-curl -H "X-API-Key: pk_…" https://REGION-PROJECT.cloudfunctions.net/api/
+curl -H "X-API-Key: pk_…" https://us-central1-principal-990be.cloudfunctions.net/api/
 ```
 
 `GET /` returns the teacher's identity, their course, today's date and every endpoint — which suits
