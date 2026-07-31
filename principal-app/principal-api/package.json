@@ -1,0 +1,14 @@
+{
+  "name": "principal-api",
+  "private": true,
+  "type": "module",
+  "description": "VPS-hosted webhook/API backend for the Principal learning dashboard — Teaching/Grading agents push content in, the dashboard triggers agent work.",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "cors": "^2.8.5",
+    "firebase-admin": "^12.1.0"
+  }
+}

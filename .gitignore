@@ -9,4 +9,5 @@ firebase-debug.log
 serviceAccount*.json
 .env
 .env.*
+!.env.example
 device-identity.json
