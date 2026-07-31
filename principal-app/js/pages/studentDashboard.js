@@ -61,7 +61,7 @@ export async function render(mount, ctx) {
 
   mount.innerHTML = [
     renderToday(todaySessions, { courseById, lessonIndex, todayMaterials }),
-    renderClasses(perCourse, { allSessions, lessonIndex, today }),
+    renderClasses(perCourse, { allSessions, today }),
     renderHomework(homework, { courseById }),
     renderStats({ completed, allSessions, reports, today }),
     renderUpcoming(upcoming, { courseById, lessonIndex }),
@@ -71,7 +71,7 @@ export async function render(mount, ctx) {
     renderReflection(completed, { courseById, lessonIndex }),
   ].join('');
 
-  return wire(mount, ctx, { completed, courseById, allSessions, lessonIndex, reports });
+  return wire(mount, ctx);
 }
 
 /* ------------------------------------------------------------ sections */
@@ -110,72 +110,37 @@ function renderToday(sessions, { courseById, lessonIndex, todayMaterials }) {
   });
 }
 
-/** One tab per course; each tab lists every session for that course, newest
-    first, so past classes are one click away — not just what's upcoming. */
-function renderClasses(perCourse, { allSessions, lessonIndex, today }) {
+/** One card per course, linking out to that class's own dashboard
+    (#/class/:id) — the per-session detail (materials, homework, gap
+    report) that used to live inline here now lives on that page and
+    its session-detail drill-down. */
+function renderClasses(perCourse, { allSessions, today }) {
   if (!perCourse.length) {
     return section('📚 My Classes', card(empty('No courses yet. An admin can add one from the Admin dashboard.', '📚')), { id: 'sec-classes' });
   }
 
-  const tabs = perCourse.map(({ course }, i) => `
-    <button type="button" class="tab-btn ${i === 0 ? 'active' : ''}" data-tab-btn="${esc(course.id)}">${esc(course.title)}</button>
-  `).join('');
+  const cards = perCourse.map(({ course }) => {
+    const sessions = allSessions.filter((s) => s.courseId === course.id);
+    const next = sessions
+      .filter((s) => s.scheduledDate >= today && s.status !== 'cancelled')
+      .sort((a, b) => a.scheduledDate.localeCompare(b.scheduledDate))[0];
+    const completedCount = sessions.filter((s) => s.status === 'completed').length;
 
-  const panels = perCourse.map(({ course }, i) => {
-    const sessions = allSessions
-      .filter((s) => s.courseId === course.id)
-      .sort((a, b) => b.scheduledDate.localeCompare(a.scheduledDate)
-        || String(b.scheduledTime || '').localeCompare(String(a.scheduledTime || '')));
-
-    const rows = sessions.length ? sessions.map((s) => {
-      const lesson = lessonIndex.get(s.lessonId);
-      const isToday = s.scheduledDate === today;
-      const statusBadge = s.status === 'completed' ? badge('completed', 'green')
-        : s.status === 'cancelled' ? badge('cancelled', 'gray')
-        : badge(isToday ? 'today' : 'upcoming', 'blue');
-      return `<details class="lesson class-date">
-        <summary>
-          <span class="cd-date">${esc(fmtDate(s.scheduledDate, { relative: false }))}</span>
-          <span class="cd-topic">${esc(lesson?.topic || 'Session')}</span>
-          ${statusBadge}
-        </summary>
-        <div class="lesson-body" data-session-body="${esc(s.id)}" data-lesson="${esc(s.lessonId || '')}" data-course="${esc(course.id)}">
-          <p class="small muted">Loading…</p>
-        </div>
-      </details>`;
-    }).join('') : empty('No sessions scheduled for this class yet.', '🗓️');
-
-    return `<div class="tab-panel ${i === 0 ? 'active' : ''}" data-tab-panel="${esc(course.id)}">
-      <div class="stack">${rows}</div>
-    </div>`;
+    return card(`
+      <h4>${esc(course.title)}</h4>
+      <p class="tiny muted">${esc(course.teacherName || 'Teacher')}${course.dayType ? ` · ${esc(course.dayType)}` : ''}</p>
+      <p class="small" style="margin-top:8px">${next
+        ? `Next class: ${esc(fmtDate(next.scheduledDate))}`
+        : 'No upcoming sessions scheduled'}</p>
+      <p class="tiny muted">${completedCount} completed session${completedCount === 1 ? '' : 's'}</p>
+      <a class="btn btn-sm btn-primary" style="margin-top:10px" href="#/class/${esc(course.id)}">Open class →</a>
+    `, { cls: 'hero' });
   }).join('');
 
-  return section('📚 My Classes', `<div class="tabs">${tabs}</div><div class="tab-panels">${panels}</div>`, {
-    sub: 'a tab per class — open any date to revisit it',
+  return section('📚 My Classes', `<div class="grid">${cards}</div>`, {
+    sub: 'open a class to see its sessions',
     id: 'sec-classes',
   });
-}
-
-/** Filled in lazily the first time a date is expanded — see wire(). */
-function classDateDetailHtml(session, { course, lesson, materials, report }) {
-  const gaps = Array.isArray(report?.identifiedGaps) ? report.identifiedGaps : [];
-  return `
-    <p class="hero-meta">${lesson ? `Week ${esc(lesson.weekNumber)}, session ${esc(lesson.sessionNumber)} · ` : ''}${esc(fmtTime(session.scheduledTime))}</p>
-    ${lesson?.objective ? `<p class="hero-body"><strong>Objective:</strong> ${esc(lesson.objective)}</p>` : ''}
-    ${lesson?.homework ? `<p class="hero-body"><strong>Homework:</strong> ${esc(lesson.homework)}</p>` : ''}
-    ${materials.length ? `<p class="hero-label" style="margin:14px 0 8px">Materials</p>
-      <div class="stack">${materials.map((m) => materialLink(m, course.id, lesson?.id)).join('')}</div>` : ''}
-    ${session.teacherNotes ? `<p class="small" style="margin-top:12px"><strong>Teacher notes:</strong> ${esc(session.teacherNotes)}</p>` : ''}
-    ${report ? `
-      <div class="small strong" style="margin-top:14px">Gap report</div>
-      <p class="small muted" style="margin:4px 0">application:
-        ${badge(humanize(report.applicationResult || 'n/a'), kindFor(report.applicationResult))}
-        · warm-up ${esc(pct(warmupScore(report)))}</p>
-      ${gaps.length ? `<div class="row" style="margin-top:6px">
-          ${gaps.map((g) => badge(`${humanize(g.severity)}: ${g.description}`, kindFor(g.severity))).join('')}
-        </div>` : '<p class="small muted">No gaps identified.</p>'}
-      ${report.remediationPlan ? `<p class="small" style="margin-top:8px"><strong>Plan:</strong> ${esc(report.remediationPlan)}</p>` : ''}
-    ` : (session.status === 'completed' ? '<p class="small muted" style="margin-top:12px">No gap report filed for this session yet.</p>' : '')}`;
 }
 
 function homeworkRow(h, { courseById }, { done }) {
@@ -423,7 +388,7 @@ function renderReflection(completed, { courseById, lessonIndex }) {
 
 /* --------------------------------------------------------------- wiring */
 
-function wire(mount, ctx, { courseById, allSessions, lessonIndex, reports }) {
+function wire(mount, ctx) {
   const form = mount.querySelector('#reflect-form');
   if (form) {
     bindForm(form, async (data) => {
@@ -452,39 +417,5 @@ function wire(mount, ctx, { courseById, allSessions, lessonIndex, reports }) {
       toast(`Could not update homework: ${err.message}`, 'err');
       btn.disabled = false;
     }
-  });
-
-  const classesSection = mount.querySelector('#sec-classes');
-  if (!classesSection) return;
-
-  classesSection.querySelectorAll('[data-tab-btn]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const id = btn.dataset.tabBtn;
-      classesSection.querySelectorAll('[data-tab-btn]').forEach((b) => b.classList.toggle('active', b === btn));
-      classesSection.querySelectorAll('[data-tab-panel]').forEach((p) => p.classList.toggle('active', p.dataset.tabPanel === id));
-    });
-  });
-
-  const materialsCache = new Map();   // lessonId -> materials[], shared across every date opened
-  classesSection.querySelectorAll('[data-session-body]').forEach((body) => {
-    const details = body.closest('details');
-    details.addEventListener('toggle', async () => {
-      if (!details.open || body.dataset.loaded) return;
-      body.dataset.loaded = '1';
-      const session = allSessions.find((s) => s.id === body.dataset.sessionBody);
-      const course = courseById.get(body.dataset.course);
-      const lessonId = body.dataset.lesson;
-      const lesson = lessonIndex.get(lessonId);
-      let materials = [];
-      if (lessonId) {
-        if (!materialsCache.has(lessonId)) {
-          const map = await listMaterialsForLessons([{ courseId: body.dataset.course, lessonId }]);
-          materialsCache.set(lessonId, map[lessonId] || []);
-        }
-        materials = materialsCache.get(lessonId);
-      }
-      const report = reports.find((r) => r.sessionId === body.dataset.sessionBody);
-      body.innerHTML = classDateDetailHtml(session, { course, lesson, materials, report });
-    });
   });
 }

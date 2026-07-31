@@ -235,6 +235,27 @@ body.auth-mode .view { padding: 0; max-width: none; }
 .stat-value { font-size: 28px; font-weight: 700; margin-top: 6px; letter-spacing: -.5px; }
 .stat-note { color: var(--muted); font-size: 12px; margin-top: 2px; }
 
+/* Per-class dashboard: one clickable square per session, labeled by date */
+.session-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+.session-square {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 14px 16px;
+  text-decoration: none;
+  color: inherit;
+  transition: transform .12s ease, box-shadow .12s ease;
+}
+.session-square:hover { transform: translateY(-2px); box-shadow: 0 6px 18px rgba(0,0,0,.08); }
+.session-square.is-today { border-color: var(--accent); }
+.session-square-date { font-weight: 700; font-size: 14px; }
+.session-square-time { color: var(--muted); font-size: 12px; }
+
 /* Today's class — hero card */
 .hero {
   background: linear-gradient(135deg, var(--sidebar) 0%, var(--sidebar-3) 100%);

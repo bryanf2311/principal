@@ -198,6 +198,22 @@ service cloud.firestore {
       allow update, delete: if isAdmin();
     }
 
+    /* --------------------------------------------------------- exams */
+    /* Session-linked, agent-graded — pushed in by principal-api via the
+       Admin SDK, which bypasses these rules entirely by design. The
+       `write: if false` here is documentation of that intent, not
+       something enforced against the server. */
+    match /exams/{examId} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+
+    match /examAttempts/{attemptId} {
+      allow get, list: if isAdmin() || isTeacher()
+        || (isStudent() && resource.data.studentId == request.auth.uid);
+      allow write: if false;
+    }
+
     /* Anything not matched above is denied by default. */
   }
 }

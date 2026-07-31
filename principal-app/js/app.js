@@ -4,7 +4,7 @@
 
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { auth, isConfigured, BOOTSTRAP_ADMIN_EMAILS } from './firebase-config.js';
-import { getUserProfile, saveUserProfile, touchLastActive } from './api.js';
+import { getUserProfile, saveUserProfile, touchLastActive, listCourses } from './api.js';
 import { esc, toast, skeletonPage, fmtDate, todayYMD, dayNameOf, bindForm } from './ui.js';
 
 import * as loginPage from './pages/login.js';
@@ -13,6 +13,8 @@ import * as teacherPage from './pages/teacherDashboard.js';
 import * as adminPage from './pages/adminDashboard.js';
 import * as quizPage from './pages/quiz.js';
 import * as lecturePage from './pages/lecture.js';
+import * as classDashboardPage from './pages/classDashboard.js';
+import * as sessionDetailPage from './pages/sessionDetail.js';
 
 /* Imports are hoisted, so reaching this line means the whole module graph —
    including the Firebase SDK — loaded. The fallback in index.html watches it. */
@@ -31,6 +33,7 @@ const backdrop = document.getElementById('backdrop');
 export const state = {
   user: null,        // Firebase Auth user
   profile: null,     // users/{uid} document
+  courses: [],        // courses visible to this user — powers the per-class nav
   ready: false,      // first auth callback has fired
 };
 
@@ -41,18 +44,21 @@ const ROUTES = [
   { pattern: /^\/admin$/, page: adminPage, roles: ['admin'], title: 'Admin Dashboard' },
   { pattern: /^\/quiz\/([^/]+)$/, page: quizPage, roles: ['student', 'teacher', 'admin'], title: 'Quiz', chrome: true },
   { pattern: /^\/lecture\/([^/]+)\/([^/]+)\/([^/]+)$/, page: lecturePage, roles: ['student', 'teacher', 'admin'], title: 'Lecture', chrome: true },
+  { pattern: /^\/class\/([^/]+)$/, page: classDashboardPage, roles: ['student', 'teacher', 'admin'], title: 'Class', chrome: true },
+  { pattern: /^\/class\/([^/]+)\/session\/([^/]+)$/, page: sessionDetailPage, roles: ['student', 'teacher', 'admin'], title: 'Session', chrome: true },
 ];
 
-/* Each role's sidebar is a set of labeled groups (Classes / Coursework /
-   Progress / …), Canva-style. An item with `tab` is one pane of its page —
+/* Each role's sidebar is a set of labeled groups (Overview / Classes /
+   Coursework / …), Canva-style. An item with `tab` is one pane of its page —
    exactly one tab is visible at a time, keeping each page focused instead
    of one long scroll. An item with no `tab` is a plain link to another
-   page (e.g. admin jumping into the student or teacher view). */
-const NAV = {
+   page (e.g. admin jumping into the student or teacher view, or one of the
+   per-class links below — those are full separate pages, not tabs). */
+const STATIC_NAV = {
   student: [
-    { group: 'Classes', items: [
+    { group: 'Overview', items: [
       { icon: '📅', label: 'Today’s Classes', href: '#/dashboard', tab: 'sec-today' },
-      { icon: '📚', label: 'My Classes', href: '#/dashboard', tab: 'sec-classes' },
+      { icon: '🎓', label: 'My Classes', href: '#/dashboard', tab: 'sec-classes' },
       { icon: '🗓️', label: 'Upcoming', href: '#/dashboard', tab: 'sec-upcoming' },
     ] },
     { group: 'Coursework', items: [
@@ -67,9 +73,9 @@ const NAV = {
     ] },
   ],
   teacher: [
-    { group: 'Classes', items: [
+    { group: 'Overview', items: [
       { icon: '📅', label: 'Today’s Class', href: '#/teacher', tab: 'sec-today' },
-      { icon: '📚', label: 'My Course', href: '#/teacher', tab: 'sec-course' },
+      { icon: '🎓', label: 'My Course', href: '#/teacher', tab: 'sec-course' },
       { icon: '🕘', label: 'Session History', href: '#/teacher', tab: 'sec-history' },
     ] },
     { group: 'Coursework', items: [
@@ -110,7 +116,26 @@ const NAV = {
   ],
 };
 
-const flatNavItems = (role) => (NAV[role] || []).flatMap((g) => g.items);
+/** One nav item per course, discovered at runtime — courses aren't known
+    until they're fetched, so this only ever adds items to what's already
+    on screen (see the courses fetch in onAuthStateChanged below); it
+    never blocks the first render. */
+function classesGroup(role) {
+  if (role !== 'student' && role !== 'teacher') return null;
+  const items = (state.courses || []).map((c) => ({
+    icon: '📘', label: c.title || 'Untitled class', href: `#/class/${c.id}`,
+  }));
+  return items.length ? { group: 'Classes', items } : null;
+}
+
+function buildNav(role) {
+  const groups = (STATIC_NAV[role] || STATIC_NAV.student).map((g) => ({ ...g, items: g.items }));
+  const dynamic = classesGroup(role);
+  if (dynamic) groups.splice(1, 0, dynamic);
+  return groups;
+}
+
+const flatNavItems = (role) => buildNav(role).flatMap((g) => g.items);
 
 export function homeFor(role) {
   if (role === 'teacher') return '#/teacher';
@@ -134,7 +159,7 @@ function renderNav(activePath) {
   const role = state.profile?.role;
   if (!role || !state.user) { navEl.innerHTML = ''; footEl.innerHTML = ''; return; }
 
-  const groups = NAV[role] || NAV.student;
+  const groups = buildNav(role);
   const activeTab = activeTabByPath[activePath];
   navEl.innerHTML = `<div class="nav-label">${esc(role)}</div>` + groups.map((group) => {
     /* A tab item only appears once its pane actually exists for this page —
@@ -421,6 +446,7 @@ if (!isConfigured) {
   onAuthStateChanged(auth, async (user) => {
     state.user = user || null;
     state.profile = null;
+    state.courses = [];
     if (user) {
       try {
         state.profile = await getUserProfile(user.uid);
@@ -432,6 +458,18 @@ if (!isConfigured) {
     state.ready = true;
     if (!location.hash) location.hash = user ? homeFor(state.profile?.role) : '#/login';
     else render();
+
+    /* Courses aren't needed to paint the first frame, so they load after —
+       once they land, just patch the sidebar in place rather than
+       re-running the whole route (which would remount the current page). */
+    if (state.profile?.role === 'teacher' || state.profile?.role === 'student') {
+      try {
+        state.courses = await listCourses(state.profile.role === 'teacher' ? { teacherId: user.uid } : {});
+        renderNav(currentPath());
+      } catch (err) {
+        console.error('Could not load courses for nav', err);
+      }
+    }
   });
   render();
 }

@@ -306,6 +306,32 @@ export async function createQuizAttempt(data) {
   return ref.id;
 }
 
+/* ---------------------------------------------------------------- exams */
+/* Read-only from the client — exams and their grades are written by
+   principal-api (Admin SDK) on behalf of the Teaching/Grading agents,
+   not from the dashboard. See firestore.rules. */
+
+export async function listExams({ courseId = null, sessionId = null } = {}) {
+  const ref = collection(db, 'exams');
+  let q = ref;
+  if (sessionId) q = query(ref, where('sessionId', '==', sessionId));
+  else if (courseId) q = query(ref, where('courseId', '==', courseId));
+  return withId(await getDocs(q)).sort(byTimeDesc('createdAt'));
+}
+
+export async function getExam(examId) {
+  const snap = await getDoc(doc(db, 'exams', examId));
+  return snap.exists() ? { id: snap.id, ...snap.data() } : null;
+}
+
+export async function listExamAttempts({ examId = null, studentId = null } = {}) {
+  const ref = collection(db, 'examAttempts');
+  let q = ref;
+  if (examId) q = query(ref, where('examId', '==', examId));
+  else if (studentId) q = query(ref, where('studentId', '==', studentId));
+  return withId(await getDocs(q)).sort(byTimeDesc('gradedAt'));
+}
+
 /* -------------------------------------------------- student assessments */
 
 export async function createStudentAssessment(data) {
