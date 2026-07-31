@@ -16,8 +16,6 @@ import {
   fmtDate, fmtTime, fmtAgo, todayYMD, addDaysYMD, kindFor, humanize, pct, toast, bindForm,
   HOMEWORK_TYPE_ICON,
 } from '../ui.js';
-import { isOpenClawConfigured } from '../openclaw-config.js';
-import { streamChat } from '../openclaw-client.js';
 
 export async function render(mount, ctx) {
   mount.innerHTML = skeletonPage();
@@ -61,14 +59,9 @@ export async function render(mount, ctx) {
     .filter((p) => p.courseId && p.lessonId);
   const todayMaterials = await listMaterialsForLessons(todayPairs);
 
-  const teachers = [...new Map(
-    courses.filter((c) => c.teacherId).map((c) => [c.teacherId, { id: c.teacherId, name: c.teacherName || 'Teacher' }]),
-  ).values()];
-
   mount.innerHTML = [
     renderToday(todaySessions, { courseById, lessonIndex, todayMaterials }),
     renderClasses(perCourse, { allSessions, lessonIndex, today }),
-    renderChat(teachers),
     renderHomework(homework, { courseById }),
     renderStats({ completed, allSessions, reports, today }),
     renderUpcoming(upcoming, { courseById, lessonIndex }),
@@ -78,7 +71,7 @@ export async function render(mount, ctx) {
     renderReflection(completed, { courseById, lessonIndex }),
   ].join('');
 
-  return wire(mount, ctx, { completed, courseById, allSessions, lessonIndex, reports, teachers });
+  return wire(mount, ctx, { completed, courseById, allSessions, lessonIndex, reports });
 }
 
 /* ------------------------------------------------------------ sections */
@@ -203,37 +196,6 @@ function homeworkRow(h, { courseById }, { done }) {
 
 /** Reading chapters, lectures/videos to watch, or skill practice (guitar,
     singing, …) — anything a teacher assigns outside of class time. */
-/** Live chat with a teacher agent, over the OpenClaw Gateway (see
-    openclaw-config.js). The thread is not persisted — it clears when
-    this page next re-renders — this is a live conversation, not a
-    record; gap reports and homework are still where the durable
-    teaching record lives. */
-function renderChat(teachers) {
-  if (!teachers.length) {
-    return section('💬 Chat', card(empty('No teacher assigned yet — a chat opens up once you have a course.', '💬')), { id: 'sec-chat' });
-  }
-  if (!isOpenClawConfigured()) {
-    return section('💬 Chat', card(`
-      <p class="small muted">Live chat needs the OpenClaw Gateway connection set up first —
-        fill in <code>gatewayBaseUrl</code> and <code>sessionKey</code> in
-        <code>js/openclaw-config.js</code>, then reload this page.</p>`), { id: 'sec-chat' });
-  }
-
-  const options = teachers.map((t) => `<option value="${esc(t.id)}">${esc(t.name)}</option>`).join('');
-  return section('💬 Chat', card(`
-    ${teachers.length > 1 ? `<div class="field" style="margin-bottom:12px">
-      <label for="chat-teacher">Talk to</label>
-      <select id="chat-teacher">${options}</select>
-    </div>` : `<input type="hidden" id="chat-teacher" value="${esc(teachers[0].id)}">`}
-    <div id="chat-thread" class="chat-thread"></div>
-    <form id="chat-form" class="chat-form">
-      <textarea id="chat-input" rows="2" required placeholder="Ask a question…"></textarea>
-      <button class="btn btn-primary" type="submit">Send</button>
-    </form>
-    <p class="tiny muted" style="margin-top:8px">This conversation isn't saved — it clears when you leave this tab.</p>
-  `, { title: `Talk to ${esc(teachers.length > 1 ? 'your teacher' : teachers[0].name)}`, sub: 'Live, streamed replies' }), { id: 'sec-chat' });
-}
-
 function renderHomework(homework, { courseById }) {
   if (!homework.length) {
     return section('📓 Homework', card(empty('No homework assigned yet — it will show up here as soon as a teacher assigns some.', '📓')), { id: 'sec-homework' });
@@ -461,7 +423,7 @@ function renderReflection(completed, { courseById, lessonIndex }) {
 
 /* --------------------------------------------------------------- wiring */
 
-function wire(mount, ctx, { courseById, allSessions, lessonIndex, reports, teachers }) {
+function wire(mount, ctx, { courseById, allSessions, lessonIndex, reports }) {
   const form = mount.querySelector('#reflect-form');
   if (form) {
     bindForm(form, async (data) => {
@@ -492,68 +454,8 @@ function wire(mount, ctx, { courseById, allSessions, lessonIndex, reports, teach
     }
   });
 
-  let activeStream = null;
-  const cleanup = () => { if (activeStream) activeStream.abort(); };
-
-  const chatForm = mount.querySelector('#chat-form');
-  if (chatForm) {
-    const thread = mount.querySelector('#chat-thread');
-    const teacherSelect = mount.querySelector('#chat-teacher');
-    const history = [];   // {role, content}[] — this tab's live thread only, not persisted
-
-    const addBubble = (cls, text) => {
-      const el = document.createElement('div');
-      el.className = `chat-msg ${cls}`;
-      el.textContent = text;
-      thread.appendChild(el);
-      thread.scrollTop = thread.scrollHeight;
-      return el;
-    };
-
-    chatForm.addEventListener('submit', (event) => {
-      event.preventDefault();
-      const input = mount.querySelector('#chat-input');
-      const text = input.value.trim();
-      if (!text || activeStream) return;
-      const teacher = teachers.find((t) => t.id === teacherSelect.value) || teachers[0];
-
-      addBubble('user', text);
-      history.push({ role: 'user', content: text });
-      input.value = '';
-
-      const submitBtn = chatForm.querySelector('[type=submit]');
-      submitBtn.disabled = true;
-      const replyEl = addBubble('assistant pending', '…');
-      let replyText = '';
-
-      activeStream = streamChat({
-        sessionKey: `${ctx.user.uid}:${teacher.id}`,
-        messages: history,
-        onToken: (chunk) => {
-          replyText += chunk;
-          replyEl.textContent = replyText;
-          thread.scrollTop = thread.scrollHeight;
-        },
-        onDone: () => {
-          replyEl.classList.remove('pending');
-          history.push({ role: 'assistant', content: replyText });
-          activeStream = null;
-          submitBtn.disabled = false;
-        },
-        onError: (err) => {
-          console.error(err);
-          replyEl.classList.remove('pending');
-          replyEl.classList.add('error');
-          replyEl.textContent = `Could not reach the teacher: ${err.message}`;
-          activeStream = null;
-          submitBtn.disabled = false;
-        },
-      });
-    });
-  }
-
   const classesSection = mount.querySelector('#sec-classes');
-  if (!classesSection) return cleanup;
+  if (!classesSection) return;
 
   classesSection.querySelectorAll('[data-tab-btn]').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -585,6 +487,4 @@ function wire(mount, ctx, { courseById, allSessions, lessonIndex, reports, teach
       body.innerHTML = classDateDetailHtml(session, { course, lesson, materials, report });
     });
   });
-
-  return cleanup;
 }

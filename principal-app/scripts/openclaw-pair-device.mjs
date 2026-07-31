@@ -1,11 +1,13 @@
 #!/usr/bin/env node
-/* One-time bootstrap: mint one Ed25519 device identity for the student
- * dashboard's chat feature, and do the real signed connect handshake
- * against your OpenClaw Gateway. Run this ONCE, on the VPS itself
- * (loopback is simplest and most trusted — see README's "Chat with a
- * teacher agent" section for why this is a one-time step rather than
- * something the browser does itself). It will very likely land as a
- * *pending* device the first time — that's expected:
+/* Reference / fallback groundwork: mints one Ed25519 device identity and
+ * does a real signed connect handshake against an OpenClaw Gateway,
+ * entirely from the VPS itself (loopback — simplest, most trusted
+ * context there is). Not currently wired into anything — the server-side
+ * agent relay (principal-api/lib/agentRelay.mjs) tries the much simpler
+ * `openclaw-native agent --deliver` CLI path first. Keep this around as
+ * the next thing to reach for if that ever proves insufficient, since a
+ * same-machine relay is a far simpler trust context than the browser
+ * attempt this was originally built for.
  *
  *   cd scripts && npm install
  *   node openclaw-pair-device.mjs
@@ -18,9 +20,9 @@
  * approve <requestId>` ITSELF, immediately, as a child process on this
  * same machine, then retries the connect — no manual step, no race.
  *
- * Everything it prints (deviceId/publicKey/privateKey/deviceToken) goes
- * into openclaw-config.js — nothing here is sent anywhere except to
- * your own Gateway and to your own `openclaw-native` CLI.
+ * Everything it prints (deviceId/publicKey/privateKey/deviceToken) is
+ * yours to use if you go this route — nothing here is sent anywhere
+ * except to your own Gateway and to your own `openclaw-native` CLI.
  *
  * Needs the `ws` package (not the native WebSocket global) because the
  * Gateway checks the WebSocket handshake's Origin header, and only `ws`
