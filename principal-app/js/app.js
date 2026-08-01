@@ -61,6 +61,7 @@ const STATIC_NAV = {
     { group: 'Overview', items: [
       { icon: '📅', label: 'Today’s Classes', href: '#/dashboard', tab: 'sec-today' },
       { icon: '🎓', label: 'My Classes', href: '#/dashboard', tab: 'sec-classes' },
+      { icon: '✨', label: 'Create a Class', href: '#/dashboard', tab: 'sec-create-class' },
       { icon: '🗓️', label: 'Upcoming', href: '#/dashboard', tab: 'sec-upcoming' },
     ] },
     { group: 'Coursework', items: [

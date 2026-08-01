@@ -13,9 +13,11 @@ this project. This is a plain Node/Express process you run yourself.
   pattern as `PRINCIPAL_SETUP_KEY` elsewhere in this app. Not behind CORS at all — a browser
   should never be able to reach these regardless of whether it has the key.
 - **`/v1/webhooks/*`** (browser → this server, the dashboard's "Create Class"/"Grade & update"
-  buttons): the signed-in teacher's real Firebase ID token, verified server-side. A shared
-  secret here would mean embedding it in client-shipped JS — the exact mistake the earlier
-  live-chat feature was abandoned over.
+  buttons): the signed-in user's real Firebase ID token, verified server-side. A shared secret
+  here would mean embedding it in client-shipped JS — the exact mistake the earlier live-chat
+  feature was abandoned over. "Create Class" allows student/teacher/admin (Bryan, the student,
+  is the one asking for new content in this single-family app); "Grade & update" stays
+  teacher/admin only.
 
 ## Setup
 
@@ -75,7 +77,17 @@ curl -X POST https://your-api-host/v1/agent/grading/push-grades \
   -H "X-Principal-Ingest-Key: $PRINCIPAL_INGEST_KEY" \
   -H "Content-Type: application/json" \
   -d '{ "examId": "EXAM_ID", "studentId": "STUDENT_UID", "score": 8, "maxScore": 10 }'
+
+curl https://your-api-host/v1/agent/grading/pending \
+  -H "X-Principal-Ingest-Key: $PRINCIPAL_INGEST_KEY"
 ```
+
+`GET /v1/agent/grading/pending` is how the Grading agent finds work: it returns every
+`examSubmissions` doc that has no matching `examAttempts` doc yet (same `examId`+`studentId`),
+with each exam's `questions` already joined in — one call gets everything needed to grade,
+no second lookup per submission. Response shape:
+`{ pending: [{ submissionId, examId, examTitle, questions, courseId, sessionId, studentId,
+answers, submittedAt }] }`.
 
 `push-class` accepts either `course` (create a new one) or `courseId` (append lessons/
 sessions/homework to an existing course) — never both. Lessons can be referenced by sessions

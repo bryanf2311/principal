@@ -102,6 +102,46 @@ agentIngestRouter.post('/teaching/push-class', async (req, res) => {
   }
 });
 
+/** Ungraded submissions — a submission with no matching examAttempt for
+    the same (examId, studentId) pair. Joins in each exam's questions so
+    the Grading agent can grade in one round trip instead of needing a
+    second lookup per submission. */
+agentIngestRouter.get('/grading/pending', async (req, res) => {
+  try {
+    const [submissionsSnap, attemptsSnap] = await Promise.all([
+      db.collection('examSubmissions').get(),
+      db.collection('examAttempts').get(),
+    ]);
+    const graded = new Set(attemptsSnap.docs.map((d) => `${d.data().examId}::${d.data().studentId}`));
+    const pendingDocs = submissionsSnap.docs.filter((d) => !graded.has(`${d.data().examId}::${d.data().studentId}`));
+
+    const examIds = [...new Set(pendingDocs.map((d) => d.data().examId))];
+    const examSnaps = await Promise.all(examIds.map((id) => db.doc(`exams/${id}`).get()));
+    const examById = new Map(examSnaps.filter((s) => s.exists).map((s) => [s.id, s.data()]));
+
+    const pending = pendingDocs.map((d) => {
+      const data = d.data();
+      const exam = examById.get(data.examId);
+      return {
+        submissionId: d.id,
+        examId: data.examId,
+        examTitle: exam?.title || null,
+        questions: exam?.questions || [],
+        courseId: data.courseId || null,
+        sessionId: data.sessionId || null,
+        studentId: data.studentId,
+        answers: data.answers || [],
+        submittedAt: data.submittedAt?.toDate?.() || null,
+      };
+    });
+
+    res.json({ pending });
+  } catch (err) {
+    console.error('grading/pending failed:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 agentIngestRouter.post('/grading/push-grades', async (req, res) => {
   const body = req.body || {};
   const problem = validatePushGrades(body);

@@ -1,15 +1,17 @@
-/* Browser-facing routes: the "Create Class" and "Grade & update"
-   buttons in the teacher dashboard hit these, which relay to the
-   Teaching/Grading agents (see lib/agentRelay.mjs). Behind
-   requireTeacherToken, not a shared secret — see lib/auth.mjs. */
+/* Browser-facing routes: the "Create Class" button (student dashboard —
+   Bryan is the student in this single-family app, so he's the one
+   asking for new content, not a human teacher) and the "Grade & update"
+   button (teacher dashboard) hit these, which relay to the
+   Teaching/Grading agents (see lib/agentRelay.mjs). Real Firebase ID
+   tokens, not a shared secret — see lib/auth.mjs. Each route picks its
+   own allowed roles rather than one router-wide check. */
 import { Router } from 'express';
-import { requireTeacherToken } from '../lib/auth.mjs';
+import { requireTeacherToken, requireAnySignedInToken } from '../lib/auth.mjs';
 import { notifyTeachingAgent, notifyGradingAgent } from '../lib/agentRelay.mjs';
 
 export const webhooksOutRouter = Router();
-webhooksOutRouter.use(requireTeacherToken);
 
-webhooksOutRouter.post('/create-class', async (req, res) => {
+webhooksOutRouter.post('/create-class', requireAnySignedInToken, async (req, res) => {
   const { prompt, teacherSlot } = req.body || {};
   try {
     const result = await notifyTeachingAgent({ prompt, teacherSlot });
@@ -20,7 +22,7 @@ webhooksOutRouter.post('/create-class', async (req, res) => {
   }
 });
 
-webhooksOutRouter.post('/grade-request', async (req, res) => {
+webhooksOutRouter.post('/grade-request', requireTeacherToken, async (req, res) => {
   const { sessionId, examId, prompt } = req.body || {};
   if (!sessionId) {
     res.status(400).json({ error: 'sessionId is required.' });

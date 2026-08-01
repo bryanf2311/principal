@@ -1,13 +1,16 @@
-/* Two different trust boundaries, two different middlewares:
+/* Two different trust boundaries:
    - requireAgentKey: server-to-server (Teaching/Grading agent -> this
      server). A shared secret, same pattern as PRINCIPAL_SETUP_KEY
      elsewhere in this app, checked with a constant-time compare.
-   - requireTeacherToken: browser-to-server (the "Create Class" /
-     "Grade & update" buttons). A shared secret here would just repeat
-     the exact "secret embedded in client-shipped JS" mistake the
-     earlier chat feature was abandoned over — this app already has
-     Firebase Auth wired up everywhere, so reuse it: verify the
-     signed-in teacher's real ID token instead. */
+   - browser-to-server (the "Create Class" / "Grade & update" buttons):
+     a shared secret here would just repeat the exact "secret embedded
+     in client-shipped JS" mistake the earlier chat feature was
+     abandoned over — this app already has Firebase Auth wired up
+     everywhere, so reuse it: verify the signed-in user's real ID
+     token instead. Two role checks share one verifier: "Create Class"
+     is a student asking for new content (Bryan is the student in this
+     single-family app — there's no separate human customer), "Grade &
+     update" stays teacher/admin only. */
 import crypto from 'node:crypto';
 import { getAuth } from 'firebase-admin/auth';
 import { db } from './firestore.mjs';
@@ -33,24 +36,34 @@ export function requireAgentKey(req, res, next) {
   next();
 }
 
-export async function requireTeacherToken(req, res, next) {
-  const header = req.header('Authorization') || '';
-  const token = header.startsWith('Bearer ') ? header.slice(7) : null;
-  if (!token) {
-    res.status(401).json({ error: 'Missing Authorization: Bearer <Firebase ID token>.' });
-    return;
-  }
-  try {
-    const decoded = await getAuth().verifyIdToken(token);
-    const profileSnap = await db.doc(`users/${decoded.uid}`).get();
-    const role = profileSnap.exists ? profileSnap.data().role : null;
-    if (role !== 'teacher' && role !== 'admin') {
-      res.status(403).json({ error: 'This action requires a teacher or admin account.' });
+function requireSignedInRole(allowedRoles, deniedMessage) {
+  return async (req, res, next) => {
+    const header = req.header('Authorization') || '';
+    const token = header.startsWith('Bearer ') ? header.slice(7) : null;
+    if (!token) {
+      res.status(401).json({ error: 'Missing Authorization: Bearer <Firebase ID token>.' });
       return;
     }
-    req.principal = { uid: decoded.uid, role };
-    next();
-  } catch (err) {
-    res.status(401).json({ error: `Invalid or expired token: ${err.message}` });
-  }
+    try {
+      const decoded = await getAuth().verifyIdToken(token);
+      const profileSnap = await db.doc(`users/${decoded.uid}`).get();
+      const role = profileSnap.exists ? profileSnap.data().role : null;
+      if (!allowedRoles.includes(role)) {
+        res.status(403).json({ error: deniedMessage });
+        return;
+      }
+      req.principal = { uid: decoded.uid, role };
+      next();
+    } catch (err) {
+      res.status(401).json({ error: `Invalid or expired token: ${err.message}` });
+    }
+  };
 }
+
+export const requireTeacherToken = requireSignedInRole(
+  ['teacher', 'admin'], 'This action requires a teacher or admin account.',
+);
+
+export const requireAnySignedInToken = requireSignedInRole(
+  ['student', 'teacher', 'admin'], 'This action requires a signed-in account.',
+);

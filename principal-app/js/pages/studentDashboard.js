@@ -16,6 +16,8 @@ import {
   fmtDate, fmtTime, fmtAgo, todayYMD, addDaysYMD, kindFor, humanize, pct, toast, bindForm,
   HOMEWORK_TYPE_ICON,
 } from '../ui.js';
+import { isPrincipalApiConfigured } from '../principal-api-config.js';
+import { requestCreateClass } from '../principal-api-client.js';
 
 export async function render(mount, ctx) {
   mount.innerHTML = skeletonPage();
@@ -62,6 +64,7 @@ export async function render(mount, ctx) {
   mount.innerHTML = [
     renderToday(todaySessions, { courseById, lessonIndex, todayMaterials }),
     renderClasses(perCourse, { allSessions, today }),
+    renderCreateClass(),
     renderHomework(homework, { courseById }),
     renderStats({ completed, allSessions, reports, today }),
     renderUpcoming(upcoming, { courseById, lessonIndex }),
@@ -141,6 +144,30 @@ function renderClasses(perCourse, { allSessions, today }) {
     sub: 'open a class to see its sessions',
     id: 'sec-classes',
   });
+}
+
+/** Asks the Teaching agent to build a new class — Bryan is the student
+    in this single-family app, so he's the one who asks for new content,
+    not a separate human teacher. Relays through principal-api; the
+    finished class shows up above once the agent pushes it back in. */
+function renderCreateClass() {
+  if (!isPrincipalApiConfigured()) {
+    return section('✨ Create a new class', card(`<p class="small muted">Asking the Teaching agent
+      to create a class needs <code>principal-api</code> deployed and its URL filled in at
+      <code>js/principal-api-config.js</code> first.</p>`), { id: 'sec-create-class' });
+  }
+  return section('✨ Create a new class', card(`
+    <form id="create-class-form">
+      <div data-error></div>
+      <div class="field">
+        <label for="cc-prompt">What should the next class cover?</label>
+        <textarea id="cc-prompt" name="prompt" rows="3" placeholder="A new unit on quadratic equations, with a slide deck and a worksheet…"></textarea>
+      </div>
+      <button class="btn btn-primary" type="submit">Ask the Teaching agent →</button>
+    </form>
+    <p class="tiny muted" style="margin-top:8px">This just relays the request — the agent does the
+      work and the new class shows up in My Classes once it's done.</p>
+  `), { id: 'sec-create-class' });
 }
 
 function homeworkRow(h, { courseById }, { done }) {
@@ -418,4 +445,14 @@ function wire(mount, ctx) {
       btn.disabled = false;
     }
   });
+
+  const createClassForm = mount.querySelector('#create-class-form');
+  if (createClassForm) {
+    bindForm(createClassForm, async (data) => {
+      const idToken = await ctx.user.getIdToken();
+      await requestCreateClass(idToken, { prompt: String(data.get('prompt') || '').trim() });
+      createClassForm.reset();
+      toast('Sent to the Teaching agent — the new class will show up in My Classes once it’s ready.', 'ok');
+    });
+  }
 }
