@@ -332,6 +332,21 @@ export async function listExamAttempts({ examId = null, studentId = null } = {})
   return withId(await getDocs(q)).sort(byTimeDesc('gradedAt'));
 }
 
+/** A student's own answers, before the Grading agent has graded them —
+    unlike exams/examAttempts, this collection IS client-writable. */
+export async function createExamSubmission(data) {
+  const ref = await addDoc(collection(db, 'examSubmissions'), { submittedAt: serverTimestamp(), ...data });
+  return ref.id;
+}
+
+export async function listExamSubmissions({ examId = null, studentId = null } = {}) {
+  const ref = collection(db, 'examSubmissions');
+  let q = ref;
+  if (examId) q = query(ref, where('examId', '==', examId));
+  else if (studentId) q = query(ref, where('studentId', '==', studentId));
+  return withId(await getDocs(q)).sort(byTimeDesc('submittedAt'));
+}
+
 /* -------------------------------------------------- student assessments */
 
 export async function createStudentAssessment(data) {

@@ -18,6 +18,8 @@ import {
   skeletonPage, fmtDate, fmtTime, fmtAgo, fmtDateTime, todayYMD, kindFor, humanize,
   pct, toast, bindForm, HOMEWORK_TYPE_ICON,
 } from '../ui.js';
+import { isPrincipalApiConfigured } from '../principal-api-config.js';
+import { requestCreateClass } from '../principal-api-client.js';
 
 let selectedCourseId = null;   // survives re-renders within a session
 
@@ -491,7 +493,9 @@ function renderHistory({ past, lessonById, filedFor, isOwner }) {
 }
 
 function renderAgentPanel(ctx, isOwner) {
-  return section('🤖 Agent access', card(`
+  return section('🤖 Agent access', `
+    ${createClassCard()}
+    ${card(`
     <p class="small muted">This course can also be taught by an AI agent. An agent signs in with its
       own teacher account and writes here directly — the same lessons, sessions, gap reports,
       milestones and quizzes you see on this page.</p>
@@ -508,7 +512,27 @@ node principal.mjs gap-report '{"sessionId":"…","applicationTask":"…",
         <p class="tiny muted" style="margin-top:8px">The tool and its instructions live in
           <code>agent-skill/principal-teacher/</code>. No paid Firebase plan is involved.</p>
       </div>
-    </details>`), { id: 'sec-api' });
+    </details>`)}`, { id: 'sec-api' });
+}
+
+function createClassCard() {
+  if (!isPrincipalApiConfigured()) {
+    return card(`<p class="small muted">Asking the Teaching agent to create a class needs
+      <code>principal-api</code> deployed and its URL filled in at
+      <code>js/principal-api-config.js</code> first.</p>`, { title: '✨ Create a new class' });
+  }
+  return card(`
+    <form id="create-class-form">
+      <div data-error></div>
+      <div class="field">
+        <label for="cc-prompt">What should the next class cover?</label>
+        <textarea id="cc-prompt" name="prompt" rows="3" placeholder="A new unit on quadratic equations, with a slide deck and a worksheet…"></textarea>
+      </div>
+      <button class="btn btn-primary" type="submit">Ask the Teaching agent →</button>
+    </form>
+    <p class="tiny muted" style="margin-top:8px">This just relays the request — the agent does the
+      work and the new class shows up here once it's done.</p>
+  `, { title: '✨ Create a new class' });
 }
 
 /* --------------------------------------------------------------- wiring */
@@ -631,6 +655,18 @@ function wire(root, mount, ctx, data) {
     selectedCourseId = event.target.value;
     reload();
   });
+
+  /* "Create a new class" — relays to the Teaching agent via principal-api;
+     the new class shows up here once the agent pushes it back in. */
+  const createClassForm = root.querySelector('#create-class-form');
+  if (createClassForm) {
+    bindForm(createClassForm, async (formData) => {
+      const idToken = await ctx.user.getIdToken();
+      await requestCreateClass(idToken, { prompt: String(formData.get('prompt') || '').trim(), teacherSlot: data.course.slot });
+      createClassForm.reset();
+      toast('Sent to the Teaching agent — the new class will show up here once it’s ready.', 'ok');
+    });
+  }
 
   /* session status buttons (today card + history table) */
   root.addEventListener('click', async (event) => {

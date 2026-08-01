@@ -214,6 +214,18 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    /* A student's own answers, before the Grading agent has graded them.
+       Unlike exams/examAttempts, this one IS client-writable — a student
+       has to be able to submit their own answers directly. Read-only for
+       everyone else's, same as quizAttempts. */
+    match /examSubmissions/{submissionId} {
+      allow get, list: if isAdmin() || isTeacher()
+        || (isStudent() && resource.data.studentId == request.auth.uid);
+      allow create: if isAdmin()
+        || (isStudent() && request.resource.data.studentId == request.auth.uid);
+      allow update, delete: if isAdmin();
+    }
+
     /* Anything not matched above is denied by default. */
   }
 }

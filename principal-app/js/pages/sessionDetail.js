@@ -7,12 +7,14 @@
 
 import {
   getCourse, getSession, getLesson, listMaterials, listHomework, setHomeworkStatus,
-  listGapReports, listExams, listExamAttempts,
+  listGapReports, listExams, listExamAttempts, listExamSubmissions,
 } from '../api.js';
 import {
   esc, section, card, badge, empty, materialLink, skeletonPage,
   fmtDate, fmtTime, humanize, kindFor, pct, toast, HOMEWORK_TYPE_ICON,
 } from '../ui.js';
+import { isPrincipalApiConfigured } from '../principal-api-config.js';
+import { requestGradeUpdate } from '../principal-api-client.js';
 
 export async function render(mount, ctx) {
   mount.innerHTML = skeletonPage();
@@ -36,9 +38,15 @@ export async function render(mount, ctx) {
   const homework = allHomework.filter((h) => !session.lessonId || !h.lessonId || h.lessonId === session.lessonId);
   const report = reports[0] || null;
 
-  const examAttempts = ctx.profile.role === 'student'
+  const isStudent = ctx.profile.role === 'student';
+  const examAttempts = isStudent
     ? (await Promise.all(exams.map((e) => listExamAttempts({ examId: e.id, studentId: ctx.user.uid })))).flat()
-    : [];
+    : (await Promise.all(exams.map((e) => listExamAttempts({ examId: e.id })))).flat();
+  const examSubmissions = isStudent
+    ? (await Promise.all(exams.map((e) => listExamSubmissions({ examId: e.id, studentId: ctx.user.uid })))).flat()
+    : (await Promise.all(exams.map((e) => listExamSubmissions({ examId: e.id })))).flat();
+  const ungradedCount = isStudent ? 0
+    : examSubmissions.filter((s) => !examAttempts.some((a) => a.studentId === s.studentId && a.examId === s.examId)).length;
 
   ctx.setHeader(lesson?.topic || 'Session', `${course.title} · ${fmtDate(session.scheduledDate)}`);
 
@@ -53,7 +61,7 @@ export async function render(mount, ctx) {
       <div class="tab-panels">
         <div class="tab-panel active" data-tab-panel="slides">${materialsPanel(materials, courseId, lesson)}</div>
         <div class="tab-panel" data-tab-panel="homework">${homeworkPanel(homework, courseId)}</div>
-        <div class="tab-panel" data-tab-panel="exam">${examPanel(exams, examAttempts, ctx.profile.role)}</div>
+        <div class="tab-panel" data-tab-panel="exam">${examPanel(exams, examAttempts, examSubmissions, ctx.profile.role, { sessionId, ungradedCount })}</div>
       </div>
     `, { id: 'sec-session-tabs' }),
   ].join('');
@@ -110,26 +118,51 @@ function homeworkPanel(homework, courseId) {
   `).join('')}</div>`;
 }
 
-function examPanel(exams, attempts, role) {
+function examPanel(exams, attempts, submissions, role, { sessionId, ungradedCount } = {}) {
   if (!exams.length) return empty('No exam for this session yet.', '📝');
   const attemptByExam = new Map(attempts.map((a) => [a.examId, a]));
-  return `<div class="stack divide">${exams.map((e) => {
-    const attempt = attemptByExam.get(e.id);
+  const submissionByExam = new Map(submissions.map((s) => [s.examId, s]));
+
+  const rows = exams.map((e) => {
     if (role !== 'student') {
       return `<div class="row"><span class="strong" style="flex:1">${esc(e.title || 'Exam')}</span>
         <span class="tiny muted">${e.questions?.length || 0} question${e.questions?.length === 1 ? '' : 's'}</span></div>`;
     }
+
+    const attempt = attemptByExam.get(e.id);
     if (attempt) {
       return `<div class="row">
         <span class="strong" style="flex:1">${esc(e.title || 'Exam')}</span>
         ${badge(`${attempt.score}/${attempt.maxScore} · ${pct(attempt.score / attempt.maxScore)}`, kindFor('completed'))}
+        <a class="btn btn-sm" href="#/exam/${esc(e.id)}">Review</a>
       </div>${attempt.feedback ? `<p class="small muted" style="margin:4px 0 0">${esc(attempt.feedback)}</p>` : ''}`;
     }
+
+    if (submissionByExam.has(e.id)) {
+      return `<div class="row">
+        <span class="strong" style="flex:1">${esc(e.title || 'Exam')}</span>
+        ${badge('awaiting grading', 'blue')}
+      </div>`;
+    }
+
     return `<div class="row">
       <span class="strong" style="flex:1">${esc(e.title || 'Exam')}</span>
-      ${badge('not yet graded', 'gray')}
+      <a class="btn btn-sm btn-primary" href="#/exam/${esc(e.id)}">Take exam →</a>
     </div>`;
-  }).join('')}</div>`;
+  }).join('');
+
+  const gradeButton = role !== 'student' && ungradedCount > 0
+    ? `<div style="margin-top:14px">
+        ${isPrincipalApiConfigured()
+    ? `<button class="btn btn-primary btn-sm" id="grade-update-btn" data-session="${esc(sessionId)}">
+            🩺 Ask the Grading agent to grade ${ungradedCount} submission${ungradedCount === 1 ? '' : 's'} →
+          </button>`
+    : `<p class="tiny muted">${ungradedCount} submission${ungradedCount === 1 ? '' : 's'} awaiting grading —
+          asking the Grading agent needs <code>principal-api</code> deployed and configured first.</p>`}
+      </div>`
+    : '';
+
+  return `<div class="stack divide">${rows}</div>${gradeButton}`;
 }
 
 function wire(mount, ctx) {
@@ -154,5 +187,19 @@ function wire(mount, ctx) {
         btn.disabled = false;
       }
     });
+  });
+
+  const gradeBtn = mount.querySelector('#grade-update-btn');
+  gradeBtn?.addEventListener('click', async () => {
+    gradeBtn.disabled = true;
+    try {
+      const idToken = await ctx.user.getIdToken();
+      await requestGradeUpdate(idToken, { sessionId: gradeBtn.dataset.session });
+      toast('Sent to the Grading agent.', 'ok');
+    } catch (err) {
+      console.error(err);
+      toast(`Could not reach the Grading agent: ${err.message}`, 'err');
+      gradeBtn.disabled = false;
+    }
   });
 }

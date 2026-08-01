@@ -3,10 +3,17 @@
 A personal learning platform for one **human student** (Bryan) and up to six **AI teachers** —
 OpenClaw agents that read their course and write back their work straight to Firestore.
 Human teachers still work; they just sign in to the dashboard instead.
-Static frontend on Netlify, Firebase Auth + Firestore as the backend. **Everything runs on the free
-Spark plan** — there are no Cloud Functions and nothing that requires billing.
-Everything — users, courses, lessons, materials, quizzes — lives in Firestore. Nothing is hardcoded:
-add a sixth teacher and a course document and the UI picks them up on the next load.
+Static frontend on Netlify, Firebase Auth + Firestore as the backend. **Firebase itself stays on the
+free Spark plan** — no Cloud Functions, nothing there requires billing. There is one optional add-on
+backend, `principal-api/`, a small VPS-hosted service that lets the Teaching/Grading agents push
+content in and lets the dashboard ask them to go do something — see its own README for why that
+lives outside Firebase entirely.
+Everything — users, courses, lessons, materials, quizzes, exams — lives in Firestore. Nothing is
+hardcoded: add a sixth teacher and a course document and the UI picks them up on the next load.
+
+The sidebar is organized **one tab per class**: each course gets its own dashboard (`#/class/:id`)
+showing a grid of clickable squares, one per session, labeled by date — click one to open that
+session's slides, homework, and exam.
 
 ```
 principal-app/
@@ -17,20 +24,27 @@ principal-app/
   firestore.indexes.json  optional indexes (the web app needs none)
   css/style.css
   js/
-    firebase-config.js    project config (already filled in)
-    app.js                router, auth listener, sidebar
-    api.js                every Firestore read/write + derived metrics
-    ui.js                 rendering helpers (escaping, cards, badges, toasts)
-    seed-content.js       the demo dataset as plain data
-    seed.js               in-browser seeder (Admin → Seed demo data)
+    firebase-config.js       project config (already filled in)
+    principal-api-config.js  principal-api URL (optional — leave blank to skip it)
+    principal-api-client.js  calls principal-api's webhook-out routes
+    app.js                   router, auth listener, sidebar (per-class nav)
+    api.js                   every Firestore read/write + derived metrics
+    ui.js                    rendering helpers (escaping, cards, badges, toasts)
+    seed-content.js          the demo dataset as plain data
+    seed.js                  in-browser seeder (Admin → Seed demo data)
     pages/
-      login.js  studentDashboard.js  teacherDashboard.js
-      adminDashboard.js  quiz.js  lecture.js
+      login.js  studentDashboard.js  teacherDashboard.js  adminDashboard.js
+      classDashboard.js   one class's dashboard — the session date-square grid
+      sessionDetail.js    one session — slides/homework/exam tabs
+      quiz.js  examTaking.js  lecture.js
   agent-skill/            what an OpenClaw teacher agent needs
     principal-teacher/principal.mjs  the agent's tool (zero deps, Node 18+)
     principal-teacher/SKILL.md       installable skill (full reference)
     principal-teacher/PROMPT.md      short prompt to paste into an agent
-  scripts/seed.mjs        optional: Admin-SDK seeder (creates Auth users)
+  principal-api/          optional VPS backend — see principal-api/README.md
+  scripts/
+    seed.mjs                  optional: Admin-SDK seeder (creates Auth users)
+    openclaw-pair-device.mjs  reference/fallback groundwork for a Gateway RPC agent relay
 ```
 
 ## 1. Firebase project

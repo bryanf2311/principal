@@ -15,6 +15,7 @@ import * as quizPage from './pages/quiz.js';
 import * as lecturePage from './pages/lecture.js';
 import * as classDashboardPage from './pages/classDashboard.js';
 import * as sessionDetailPage from './pages/sessionDetail.js';
+import * as examTakingPage from './pages/examTaking.js';
 
 /* Imports are hoisted, so reaching this line means the whole module graph —
    including the Firebase SDK — loaded. The fallback in index.html watches it. */
@@ -46,6 +47,7 @@ const ROUTES = [
   { pattern: /^\/lecture\/([^/]+)\/([^/]+)\/([^/]+)$/, page: lecturePage, roles: ['student', 'teacher', 'admin'], title: 'Lecture', chrome: true },
   { pattern: /^\/class\/([^/]+)$/, page: classDashboardPage, roles: ['student', 'teacher', 'admin'], title: 'Class', chrome: true },
   { pattern: /^\/class\/([^/]+)\/session\/([^/]+)$/, page: sessionDetailPage, roles: ['student', 'teacher', 'admin'], title: 'Session', chrome: true },
+  { pattern: /^\/exam\/([^/]+)$/, page: examTakingPage, roles: ['student', 'teacher', 'admin'], title: 'Exam', chrome: true },
 ];
 
 /* Each role's sidebar is a set of labeled groups (Overview / Classes /
